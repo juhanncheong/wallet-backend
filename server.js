@@ -118,5 +118,5 @@ app.delete('/admin/coins/:id', verifyAdmin, async (req, res) => {
 });
 
 // Start Server
-const PORT = process.env.PORT || 4000;
+const PORT = process.env.PORT;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
