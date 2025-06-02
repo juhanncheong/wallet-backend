@@ -1,125 +1,122 @@
-const config = require('./config');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config();
-const bcrypt = require('bcrypt');
-const User = require('./models/User');
+const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
-
-
-
 const app = express();
+
+dotenv.config();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Connect to MongoDB
+// MongoDB Connection
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
-.then(() => console.log('✅ MongoDB connected'))
-.catch((err) => console.error('❌ MongoDB error:', err));
+  useUnifiedTopology: true
+}).then(() => console.log('MongoDB Connected'))
+  .catch(err => console.error(err));
 
-app.get('/api/fixed-wallet', (req, res) => {
-  res.json(config.fixedWallet);
-});
-
-// Test route
-app.get('/', (req, res) => {
-  res.send('✅ Backend and database are working!');
-});
-
-// Register a new user
-app.post('/api/register', async (req, res) => {
-  try {
-    const { username, email, password } = req.body;
-
-    // Check if user already exists
-    const existing = await User.findOne({ email });
-    if (existing) {
-      return res.status(400).json({ message: 'User already exists.' });
-    }
-
-    // Hash password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
-
-    // Save user
-    const newUser = new User({
-      username,
-      email,
-      password: hashedPassword
-    });
-
-    await newUser.save();
-
-    res.status(201).json({ message: '✅ User registered successfully!' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+// Schemas
+const UserSchema = new mongoose.Schema({
+  name: String,
+  email: String,
+  balance: { type: Number, default: 0 },
+  wallets: {
+    BTC: String,
+    ETH: String,
+    USDT: String,
+    USDC: String,
   }
 });
 
-// Login user
-app.post('/api/login', async (req, res) => {
+const WithdrawalSchema = new mongoose.Schema({
+  userId: mongoose.Schema.Types.ObjectId,
+  amount: Number,
+  coin: String,
+  status: { type: String, default: 'pending' },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const CoinSchema = new mongoose.Schema({
+  name: String,
+  symbol: String,
+  network: String,
+  listed: Boolean
+});
+
+const AdminSchema = new mongoose.Schema({
+  username: String,
+  password: String
+});
+
+const User = mongoose.model('User', UserSchema);
+const Withdrawal = mongoose.model('Withdrawal', WithdrawalSchema);
+const Coin = mongoose.model('Coin', CoinSchema);
+const Admin = mongoose.model('Admin', AdminSchema);
+
+// Admin Login
+app.post('/admin/login', async (req, res) => {
+  const { username, password } = req.body;
+  const admin = await Admin.findOne({ username });
+  if (!admin || admin.password !== password) return res.status(401).send('Unauthorized');
+  const token = jwt.sign({ adminId: admin._id }, 'secretkey');
+  res.json({ token });
+});
+
+// Middleware: Verify Admin
+function verifyAdmin(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(403).send('Token missing');
   try {
-    const { email, password } = req.body;
-
-    const user = await User.findOne({ email });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      return res.status(400).json({ message: 'Invalid password.' });
-    }
-
-    // ✅ Generate a token
-    const token = jwt.sign(
-      { userId: user._id, email: user.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '2h' }
-    );
-
-    res.json({
-      message: '✅ Login successful!',
-      token,
-      user: {
-        username: user.username,
-        email: user.email
-      }
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    const decoded = jwt.verify(token, 'secretkey');
+    req.adminId = decoded.adminId;
+    next();
+  } catch {
+    res.status(403).send('Invalid token');
   }
+}
+
+// Admin Routes
+app.get('/admin/users', verifyAdmin, async (req, res) => {
+  const users = await User.find();
+  res.json(users);
 });
 
-
-
-// Start server
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server is running on http://localhost:${PORT}`);
+app.patch('/admin/users/:id/balance', verifyAdmin, async (req, res) => {
+  const { amount } = req.body;
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).send('User not found');
+  user.balance += amount;
+  await user.save();
+  res.json(user);
 });
 
-const Wallet = require('./models/Wallet');
-
-app.post('/api/wallet', async (req, res) => {
-  try {
-    const { address, coin, network } = req.body;
-
-    const newWallet = new Wallet({ address, coin, network });
-    await newWallet.save();
-
-    res.status(201).json({ message: 'Wallet saved successfully!' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Something went wrong.' });
-  }
+app.post('/admin/users/:id/wallets', verifyAdmin, async (req, res) => {
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).send('User not found');
+  user.wallets = { ...user.wallets, ...req.body };
+  await user.save();
+  res.json(user);
 });
 
+app.get('/admin/withdrawals', verifyAdmin, async (req, res) => {
+  const withdrawals = await Withdrawal.find().populate('userId', 'email');
+  res.json(withdrawals);
+});
+
+app.post('/admin/coins', verifyAdmin, async (req, res) => {
+  const coin = new Coin(req.body);
+  await coin.save();
+  res.json(coin);
+});
+
+app.delete('/admin/coins/:id', verifyAdmin, async (req, res) => {
+  await Coin.findByIdAndDelete(req.params.id);
+  res.sendStatus(204);
+});
+
+// Start Server
+const PORT = process.env.PORT || 4000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
