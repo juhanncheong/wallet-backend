@@ -46,21 +46,34 @@ function verifyAdmin(req, res, next) {
   }
 }
 
-// Admin Routes
+// Admin: Get All Users
 app.get('/admin/users', verifyAdmin, async (req, res) => {
   const users = await User.find();
   res.json(users);
 });
 
+// ✅ Admin: Update User Balance
 app.patch('/admin/users/:id/balance', verifyAdmin, async (req, res) => {
   const { amount } = req.body;
+
+  if (typeof amount !== 'number') {
+    return res.status(400).json({ error: 'Invalid amount' });
+  }
+
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).send('User not found');
+
+  // Initialize balance if not already set
+  if (typeof user.balance !== 'number') {
+    user.balance = 0;
+  }
+
   user.balance += amount;
   await user.save();
-  res.json(user);
+  res.json({ message: 'Balance updated', user });
 });
 
+// Admin: Add or Update User Wallets
 app.post('/admin/users/:id/wallets', verifyAdmin, async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).send('User not found');
@@ -69,17 +82,20 @@ app.post('/admin/users/:id/wallets', verifyAdmin, async (req, res) => {
   res.json(user);
 });
 
+// Admin: Get Withdrawal Requests
 app.get('/admin/withdrawals', verifyAdmin, async (req, res) => {
   const withdrawals = await Withdrawal.find().populate('userId', 'email');
   res.json(withdrawals);
 });
 
+// Admin: Add a Coin
 app.post('/admin/coins', verifyAdmin, async (req, res) => {
   const coin = new Coin(req.body);
   await coin.save();
   res.json(coin);
 });
 
+// Admin: Delete a Coin
 app.delete('/admin/coins/:id', verifyAdmin, async (req, res) => {
   await Coin.findByIdAndDelete(req.params.id);
   res.sendStatus(204);
