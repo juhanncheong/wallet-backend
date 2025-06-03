@@ -13,7 +13,7 @@ app.use(cors({
 }));
 
 app.use(express.json());
-app.use("/api", require("./auth"));
+app.use("/api", require("./routes/auth"));
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI, {
