@@ -5,7 +5,6 @@ const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 const app = express();
 
-const cors = require('cors');
 app.use(cors({
   origin: '*', // or replace with 'http://localhost:5173' for security
 }));
