@@ -5,14 +5,13 @@ const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 const app = express();
 
-app.use(cors({
-  origin: '*', // or replace with 'http://localhost:5173' for security
-}));
-
 dotenv.config();
 
-// Middleware
-app.use(cors());
+// ✅ Only ONE CORS middleware needed, placed correctly
+app.use(cors({
+  origin: '*', // You can later replace with 'http://localhost:5173' for added security
+}));
+
 app.use(express.json());
 
 // MongoDB Connection
@@ -122,5 +121,5 @@ app.delete('/admin/coins/:id', verifyAdmin, async (req, res) => {
 });
 
 // Start Server
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
