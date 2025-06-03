@@ -3,62 +3,26 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
-const app = express();
 
+const User = require("./models/User");
+const Withdrawal = require("./models/Withdrawal");
+const Coin = require("./models/Coin");
+const Admin = require("./models/Admin");
+
+const app = express();
 dotenv.config();
 
-// ✅ Only ONE CORS middleware needed, placed correctly
-app.use(cors({
-  origin: '*', // You can later replace with 'http://localhost:5173' for added security
-}));
-
+// Middleware
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use("/api", require("./routes/auth"));
 
-// MongoDB Connection
+// MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => console.log('MongoDB Connected'))
   .catch(err => console.error(err));
-
-// Schemas
-const UserSchema = new mongoose.Schema({
-  name: String,
-  email: String,
-  balance: { type: Number, default: 0 },
-  wallets: {
-    BTC: String,
-    ETH: String,
-    USDT: String,
-    USDC: String,
-  }
-});
-
-const WithdrawalSchema = new mongoose.Schema({
-  userId: mongoose.Schema.Types.ObjectId,
-  amount: Number,
-  coin: String,
-  status: { type: String, default: 'pending' },
-  createdAt: { type: Date, default: Date.now }
-});
-
-const CoinSchema = new mongoose.Schema({
-  name: String,
-  symbol: String,
-  network: String,
-  listed: Boolean
-});
-
-const AdminSchema = new mongoose.Schema({
-  username: String,
-  password: String
-});
-
-const User = mongoose.model('User', UserSchema);
-const Withdrawal = mongoose.model('Withdrawal', WithdrawalSchema);
-const Coin = mongoose.model('Coin', CoinSchema);
-const Admin = mongoose.model('Admin', AdminSchema);
 
 // Admin Login
 app.post('/admin/login', async (req, res) => {
@@ -121,6 +85,6 @@ app.delete('/admin/coins/:id', verifyAdmin, async (req, res) => {
   res.sendStatus(204);
 });
 
-// Start Server
+// Start server
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
