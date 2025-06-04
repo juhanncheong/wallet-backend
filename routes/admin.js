@@ -11,6 +11,10 @@ const {
   toggleFreezeWithdrawal
 } = require("../controller/adminController");
 
+router.patch("/users/:id/freeze", toggleFreezeAccount);
+router.patch("/users/:id/freeze-withdrawals", toggleFreezeWithdrawals);
+
+
 // ✅ Update user balance
 router.patch("/users/:id/balance", updateUserBalance);
 

@@ -128,3 +128,37 @@ exports.toggleFreezeWithdrawal = async (req, res) => {
     res.status(500).json({ message: "Failed to toggle withdrawal freeze" });
   }
 };
+
+// ✅ Freeze or unfreeze account
+exports.toggleFreezeAccount = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isFrozen = !user.isFrozen;
+    await user.save();
+
+    res.json({ success: true, isFrozen: user.isFrozen });
+  } catch (err) {
+    console.error("Toggle freeze account error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ✅ Freeze or unfreeze withdrawals
+exports.toggleFreezeWithdrawals = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isWithdrawFrozen = !user.isWithdrawFrozen;
+    await user.save();
+
+    res.json({ success: true, isWithdrawFrozen: user.isWithdrawFrozen });
+  } catch (err) {
+    console.error("Toggle freeze withdrawals error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+};

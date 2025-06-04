@@ -21,6 +21,15 @@ const userSchema = new mongoose.Schema({
     default: false, // ✅ For freezing withdrawals only
   },
   
+  isFrozen: {
+  type: Boolean,
+  default: false,
+},
+isWithdrawFrozen: {
+  type: Boolean,
+  default: false,
+},
+  
   createdAt: {
     type: Date,
     default: Date.now,
