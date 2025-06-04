@@ -8,7 +8,7 @@ const {
   changePassword,
   changePin,
   toggleFreezeAccount,
-  toggleFreezeWithdrawals
+  toggleFreezeWithdrawals,
 } = require("../controller/adminController");
 
 router.patch("/users/:id/freeze", toggleFreezeAccount);
