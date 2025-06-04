@@ -4,7 +4,7 @@ const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   email:    { type: String, required: true, unique: true },
   password: { type: String, required: true },
-  withdrawalPin: { type: String }, // ✅ New field for secure PIN
+  withdrawalPin: { type: String },
 
   balance: {
     type: Number,
@@ -16,19 +16,10 @@ const userSchema = new mongoose.Schema({
     default: false, // ✅ For freezing login access
   },
 
-  withdrawalFrozen: {
+  isWithdrawFrozen: {
     type: Boolean,
-    default: false, // ✅ For freezing withdrawals only
+    default: false, // ✅ For freezing withdrawals
   },
-  
-  isFrozen: {
-  type: Boolean,
-  default: false,
-},
-isWithdrawFrozen: {
-  type: Boolean,
-  default: false,
-},
   
   createdAt: {
     type: Date,
