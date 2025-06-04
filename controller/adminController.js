@@ -1,27 +1,42 @@
 const User = require('../models/User');
+const Transaction = require('../models/Transaction'); // ADD THIS
 const bcrypt = require("bcryptjs");
 
-// ✅ Update user balance
+// ✅ Update user balance and log transaction
 exports.updateUserBalance = async (req, res) => {
   const { id } = req.params;
-  const { amount } = req.body;
+  const { amount, coin = 'usdt' } = req.body; // Default to USDT if coin not provided
 
   try {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.balance = (user.balance || 0) + amount;
+    user.coins[coin] = (user.coins[coin] || 0) + amount;
     await user.save();
+
+    // ✅ Create a new transaction log
+    const tx = new Transaction({
+      userId: id,
+      type: 'deposit',
+      coin,
+      amount,
+      status: 'completed',
+    });
+    await tx.save();
 
     res.json({
       success: true,
       balance: user.balance,
+      coinBalance: user.coins[coin],
+      transactionId: tx._id,
     });
   } catch (err) {
     console.error("Balance update error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 };
+
 
 // ✅ Change username
 exports.changeUsername = async (req, res) => {
