@@ -1,4 +1,3 @@
-// routes/wallet.js
 const express = require("express");
 const router = express.Router();
 const Transaction = require("../models/Transaction");
@@ -7,7 +6,7 @@ const auth = require("../middleware/auth");
 
 // POST /api/wallet/withdraw
 router.post("/withdraw", auth, async (req, res) => {
-  const { coin, amount, pin } = req.body;
+  const { coin, amount, pin, address } = req.body; // ✅ include address
   const userId = req.user.userId;
 
   try {
@@ -28,6 +27,10 @@ router.post("/withdraw", auth, async (req, res) => {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
+    if (!address || address.length < 8) {
+      return res.status(400).json({ message: "Invalid wallet address" });
+    }
+
     // Deduct coin
     user.coins[coin] -= amount;
     await user.save();
@@ -38,7 +41,8 @@ router.post("/withdraw", auth, async (req, res) => {
       type: "withdrawal",
       coin,
       amount,
-      status: "pending"
+      status: "pending",
+      address, // ✅ store the withdrawal address
     });
 
     res.json({ message: "Withdrawal request submitted" });
