@@ -58,5 +58,13 @@ router.put('/:id/status', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+router.get('/all-withdrawals', async (req, res) => {
+  try {
+    const withdrawals = await Transaction.find({ type: 'withdrawal' }).sort({ createdAt: -1 });
+    res.json(withdrawals);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 module.exports = router;
