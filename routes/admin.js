@@ -25,3 +25,5 @@ router.put("/users/:id/password", changePassword);
 router.put("/users/:id/pin", changePin);
 
 module.exports = router;
+
+// testing render push
