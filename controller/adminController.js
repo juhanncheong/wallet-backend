@@ -1,4 +1,4 @@
-const User = require("../../User");
+const User = require('../models/User');
 const bcrypt = require("bcryptjs");
 
 // ✅ Update user balance
