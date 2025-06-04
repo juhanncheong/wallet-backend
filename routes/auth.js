@@ -64,10 +64,22 @@ router.get("/user", authMiddleware, async (req, res) => {
     const user = await User.findById(req.user.userId).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // USD conversion rates
+    const btcUsd = 65000;
+    const ethUsd = 3500;
+    const usdcUsd = 1;
+    const usdtUsd = 1;
+
+    const totalBalance =
+      (user.coins?.bitcoin || 0) * btcUsd +
+      (user.coins?.ethereum || 0) * ethUsd +
+      (user.coins?.usdc || 0) * usdcUsd +
+      (user.coins?.usdt || 0) * usdtUsd;
+
     res.json({
       username: user.username,
       email: user.email,
-      balance: user.balance,
+      balance: totalBalance,
       coins: user.coins,
       isFrozen: user.isFrozen,
       isWithdrawFrozen: user.isWithdrawFrozen,
@@ -78,6 +90,7 @@ router.get("/user", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 module.exports = router;

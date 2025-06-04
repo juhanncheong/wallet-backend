@@ -8,6 +8,7 @@ const User = require("./models/User");
 const Withdrawal = require("./models/Withdrawal");
 const Coin = require("./models/Coin");
 const Admin = require("./models/Admin");
+const transactionRoutes = require('./routes/transaction');
 
 const app = express();
 dotenv.config();
@@ -17,6 +18,7 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use("/api", require("./routes/auth"));
 app.use("/admin", require("./routes/admin")); // ✅ this connects your admin.js routes
+app.use('/api/transactions', transactionRoutes);
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
