@@ -11,17 +11,18 @@ const Admin = require("./models/Admin");
 const transactionRoutes = require('./routes/transaction');
 const walletRoutes = require('./routes/wallet');
 const app = express();
+const withdrawalRoutes = require("./routes/withdrawals");
+
 dotenv.config();
 
 // Middleware
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use("/api", require("./routes/auth"));
-app.use("/admin", require("./routes/admin")); // ✅ this connects your admin.js routes
 app.use('/api/transactions', transactionRoutes);
-app.use("/api/auth", require("./routes/auth"));
 app.use("/api/wallet", require("./routes/wallet"));
 app.use("/api/wallet", walletRoutes);
+app.use("/admin", withdrawalRoutes);
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
