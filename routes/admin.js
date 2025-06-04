@@ -8,11 +8,11 @@ const {
   changePassword,
   changePin,
   toggleFreezeAccount,
-  toggleFreezeWithdrawals,
+  toggleFreezeWithdrawal,
 } = require("../controller/adminController");
 
 router.patch("/users/:id/freeze", toggleFreezeAccount);
-router.patch("/users/:id/freeze-withdrawals", toggleFreezeWithdrawals);
+router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
 
 // ✅ Update user balance

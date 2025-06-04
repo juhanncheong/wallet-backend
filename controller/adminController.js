@@ -147,7 +147,7 @@ exports.toggleFreezeAccount = async (req, res) => {
 };
 
 // ✅ Freeze or unfreeze withdrawals
-exports.toggleFreezeWithdrawals = async (req, res) => {
+exports.toggleFreezeWithdrawal = async (req, res) => {
   const { id } = req.params;
   try {
     const user = await User.findById(id);
