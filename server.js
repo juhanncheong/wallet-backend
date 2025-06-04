@@ -16,6 +16,7 @@ dotenv.config();
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use("/api", require("./routes/auth"));
+app.use("/admin", require("./routes/admin")); // ✅ this connects your admin.js routes
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
