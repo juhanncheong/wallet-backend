@@ -10,6 +10,16 @@ const userSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+
+  isFrozen: {
+    type: Boolean,
+    default: false, // ✅ For freezing login access
+  },
+
+  withdrawalFrozen: {
+    type: Boolean,
+    default: false, // ✅ For freezing withdrawals only
+  },
   
   createdAt: {
     type: Date,

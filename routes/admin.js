@@ -6,24 +6,30 @@ const {
   changeUsername,
   changeEmail,
   changePassword,
-  changePin
+  changePin,
+  toggleFreezeAccount,
+  toggleFreezeWithdrawal
 } = require("../controller/adminController");
 
-// Update user balance
+// ✅ Update user balance
 router.patch("/users/:id/balance", updateUserBalance);
 
-// Change username
+// ✅ Change username
 router.put("/users/:id/username", changeUsername);
 
-// Change email
+// ✅ Change email
 router.put("/users/:id/email", changeEmail);
 
-// Change password
+// ✅ Change password
 router.put("/users/:id/password", changePassword);
 
-// Change withdrawal pin
+// ✅ Change withdrawal pin
 router.put("/users/:id/pin", changePin);
 
-module.exports = router;
+// ✅ Freeze/unfreeze account
+router.put("/users/:id/freeze-account", toggleFreezeAccount);
 
-// testing render push
+// ✅ Freeze/unfreeze withdrawal
+router.put("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
+
+module.exports = router;

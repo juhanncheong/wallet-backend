@@ -92,3 +92,39 @@ exports.changePin = async (req, res) => {
     res.status(500).json({ message: "Failed to change pin" });
   }
 };
+
+// ✅ Freeze / Unfreeze login access
+exports.toggleFreezeAccount = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isFrozen = !user.isFrozen;
+    await user.save();
+
+    res.json({ success: true, isFrozen: user.isFrozen });
+  } catch (err) {
+    console.error("Toggle freeze account error:", err);
+    res.status(500).json({ message: "Failed to toggle freeze" });
+  }
+};
+
+// ✅ Freeze / Unfreeze withdrawals
+exports.toggleFreezeWithdrawal = async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.withdrawalFrozen = !user.withdrawalFrozen;
+    await user.save();
+
+    res.json({ success: true, withdrawalFrozen: user.withdrawalFrozen });
+  } catch (err) {
+    console.error("Toggle freeze withdrawal error:", err);
+    res.status(500).json({ message: "Failed to toggle withdrawal freeze" });
+  }
+};
