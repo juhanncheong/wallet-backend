@@ -60,8 +60,24 @@ router.post("/login", async (req, res) => {
 
 // Get user info (protected)
 router.get("/user", authMiddleware, async (req, res) => {
-  const user = await User.findById(req.user.id).select("-password");
-  res.json(user);
+  try {
+    const user = await User.findById(req.user.userId).select("-password");
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    res.json({
+      username: user.username,
+      email: user.email,
+      balance: user.balance,
+      coins: user.coins,
+      isFrozen: user.isFrozen,
+      isWithdrawFrozen: user.isWithdrawFrozen,
+      createdAt: user.createdAt,
+    });
+  } catch (err) {
+    console.error("Fetch user error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
+
 
 module.exports = router;

@@ -11,14 +11,21 @@ const userSchema = new mongoose.Schema({
     default: 0,
   },
 
+  coins: {
+    bitcoin: { type: Number, default: 0 },
+    ethereum: { type: Number, default: 0 },
+    usdc: { type: Number, default: 0 },
+    usdt: { type: Number, default: 0 },
+  },
+
   isFrozen: {
     type: Boolean,
-    default: false, // ✅ For freezing login access
+    default: false,
   },
 
   isWithdrawFrozen: {
     type: Boolean,
-    default: false, // ✅ For freezing withdrawals
+    default: false,
   },
   
   createdAt: {

@@ -36,4 +36,7 @@ router.put("/users/:id/freeze-account", toggleFreezeAccount);
 // ✅ Freeze/unfreeze withdrawal
 router.put("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
+// ✅ Update user coin balance (e.g. BTC, ETH, USDC, USDT)
+router.patch("/users/:id/coins", require("../controller/adminUpdateCoin"));
+
 module.exports = router;
