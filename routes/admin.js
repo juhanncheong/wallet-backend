@@ -7,7 +7,7 @@ const {
   changeEmail,
   changePassword,
   changePin
-} = require("../models/controllers/adminController");
+} = require("../Controllers/adminController");
 
 // Update user balance
 router.patch("/users/:id/balance", updateUserBalance);
