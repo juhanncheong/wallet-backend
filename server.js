@@ -10,20 +10,28 @@ const Coin = require("./models/Coin");
 const Admin = require("./models/Admin");
 const transactionRoutes = require('./routes/transaction');
 const walletRoutes = require('./routes/wallet');
-const app = express();
 const withdrawalRoutes = require("./routes/withdrawals");
 
-dotenv.config();
+dotenv.config(); // ✅ Load environment variables first
 
-// Middleware
-app.use(cors({ origin: '*' }));
+const app = express();
+
+// ✅ Only ONE clean CORS setup
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true
+}));
+
+// ✅ General middleware
 app.use(express.json());
+
+// ✅ Route mounting
 app.use("/api", require("./routes/auth"));
 app.use('/api/transactions', transactionRoutes);
-app.use("/api/wallet", require("./routes/wallet"));
 app.use("/api/wallet", walletRoutes);
 app.use("/admin", require("./routes/admin"));
 app.use("/admin", withdrawalRoutes);
+
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
