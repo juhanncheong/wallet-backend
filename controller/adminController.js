@@ -176,34 +176,27 @@ exports.toggleFreezeWithdrawal = async (req, res) => {
     console.error("Toggle freeze withdrawals error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
-  const User = require('../models/User');
+};
 
-const updateWalletAddress = async (req, res) => {
+exports.updateWalletAddress = async (req, res) => {
+  const { id } = req.params;
+  const { coin, address } = req.body;
+  const validCoins = ['bitcoin', 'ethereum', 'usdc', 'usdt'];
+
+  if (!validCoins.includes(coin)) {
+    return res.status(400).json({ message: 'Invalid coin type' });
+  }
+
   try {
-    const { coin, address } = req.body;
-    const validCoins = ['bitcoin', 'ethereum', 'usdc', 'usdt'];
-
-    if (!validCoins.includes(coin)) {
-      return res.status(400).json({ error: 'Invalid coin type' });
-    }
-
-    const user = await User.findById(req.params.id);
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+    const user = await User.findById(id);
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
     user.wallets[coin] = address;
     await user.save();
 
-    res.json({ message: `${coin.toUpperCase()} address updated successfully.` });
-  } catch (error) {
-    res.status(500).json({ error: 'Server error' });
+    res.json({ success: true, message: `${coin.toUpperCase()} address updated.` });
+  } catch (err) {
+    console.error("Update wallet error:", err);
+    res.status(500).json({ message: "Failed to update wallet address" });
   }
-};
-
-module.exports = {
-  // keep your other exports here,
-  updateWalletAddress,
-};
-
 };
