@@ -117,11 +117,13 @@ router.post("/change-pin", authMiddleware, async (req, res) => {
     const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    if (user.withdrawalPin !== currentPin) {
+    const isMatch = await bcrypt.compare(currentPin, user.withdrawalPin);
+    if (!isMatch) {
       return res.status(400).json({ message: "Current PIN is incorrect" });
     }
 
-    user.withdrawalPin = newPin;
+    const hashedPin = await bcrypt.hash(newPin, 10);
+    user.withdrawalPin = hashedPin;
     await user.save();
 
     res.json({ message: "Withdrawal PIN updated successfully" });
@@ -130,6 +132,7 @@ router.post("/change-pin", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 });
 
