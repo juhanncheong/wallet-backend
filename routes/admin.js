@@ -67,4 +67,17 @@ router.get("/user", async (req, res) => {
   }
 });
 
+// ✅ Get all users for Admin UI
+router.get("/users", async (req, res) => {
+  const User = require("../models/User");
+
+  try {
+    const users = await User.find().select("-password -withdrawalPin");
+    res.json(users);
+  } catch (err) {
+    console.error("Fetch users error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;
