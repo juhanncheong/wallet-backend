@@ -43,4 +43,28 @@ router.patch("/users/:id/coins", require("../controller/adminUpdateCoin"));
 // ✅ Update user wallet address
 router.put("/users/:id/wallet", updateWalletAddress);
 
+// ✅ Search user by email or ID
+router.get("/user", async (req, res) => {
+  const { email, id } = req.query;
+  const User = require("../models/User");
+
+  try {
+    let user;
+    if (email) {
+      user = await User.findOne({ email });
+    } else if (id) {
+      user = await User.findById(id);
+    }
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json(user);
+  } catch (err) {
+    console.error("Search error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;
