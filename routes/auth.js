@@ -90,6 +90,47 @@ router.get("/user", authMiddleware, async (req, res) => {
     console.error("Fetch user error:", err);
     res.status(500).json({ message: "Server error" });
   }
+  router.post("/change-password", authMiddleware, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Current password is incorrect" });
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    user.password = hashedPassword;
+    await user.save();
+
+    res.json({ message: "Password updated successfully" });
+  } catch (err) {
+    console.error("Change password error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+router.post("/change-pin", authMiddleware, async (req, res) => {
+  const { currentPin, newPin } = req.body;
+
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (user.withdrawalPin !== currentPin) {
+      return res.status(400).json({ message: "Current PIN is incorrect" });
+    }
+
+    user.withdrawalPin = newPin;
+    await user.save();
+
+    res.json({ message: "Withdrawal PIN updated successfully" });
+  } catch (err) {
+    console.error("Change PIN error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 });
 
 
