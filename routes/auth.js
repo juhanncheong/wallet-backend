@@ -81,6 +81,7 @@ router.get("/user", authMiddleware, async (req, res) => {
       email: user.email,
       balance: totalBalance,
       coins: user.coins,
+      wallets: user.wallets,
       isFrozen: user.isFrozen,
       isWithdrawFrozen: user.isWithdrawFrozen,
       createdAt: user.createdAt,
