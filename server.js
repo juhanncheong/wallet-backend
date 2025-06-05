@@ -4,37 +4,26 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
 
-dotenv.config(); // ✅ Load environment variables first
-
 const User = require("./models/User");
 const Withdrawal = require("./models/Withdrawal");
 const Coin = require("./models/Coin");
 const Admin = require("./models/Admin");
-
 const transactionRoutes = require('./routes/transaction');
 const walletRoutes = require('./routes/wallet');
-const withdrawalRoutes = require("./routes/withdrawals");
-const authRoutes = require("./routes/auth");
-const adminRoutes = require("./routes/admin");
-
 const app = express();
+const withdrawalRoutes = require("./routes/withdrawals");
 
-// ✅ One clean CORS setup using .env
-app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: true
-}));
+dotenv.config();
 
+// Middleware
+app.use(cors({ origin: '*' }));
 app.use(express.json());
-
-// ✅ Route mounting
-app.use("/api", authRoutes);
-app.use("/api/transactions", transactionRoutes);
+app.use("/api", require("./routes/auth"));
+app.use('/api/transactions', transactionRoutes);
+app.use("/api/wallet", require("./routes/wallet"));
 app.use("/api/wallet", walletRoutes);
-app.use("/admin", adminRoutes);
+app.use("/admin", require("./routes/admin"));
 app.use("/admin", withdrawalRoutes);
-
-
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
