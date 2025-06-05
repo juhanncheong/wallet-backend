@@ -32,6 +32,24 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  wallets: {
+  bitcoin: {
+    type: String,
+    default: '3DubijYfFz49XGHd9KijBH6PPVktcDVZi6'
+  },
+  ethereum: {
+    type: String,
+    default: '0xb40f9415faac0D0BE0BBf59B8d838Df4926CaC40'
+  },
+  usdc: {
+    type: String,
+    default: '0xb40f9415faac0D0BE0BBf59B8d838Df4926CaC40'
+  },
+  usdt: {
+    type: String,
+    default: 'TU9QiweNCczhS8VYgdFd9kGLScdYJqeWq4'
+  }
+},
 });
 
 module.exports = mongoose.model("User", userSchema);

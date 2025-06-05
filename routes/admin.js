@@ -9,6 +9,7 @@ const {
   changePin,
   toggleFreezeAccount,
   toggleFreezeWithdrawal,
+  updateWalletAddress,
 } = require("../controller/adminController");
 
 router.patch("/users/:id/freeze", toggleFreezeAccount);
@@ -38,5 +39,8 @@ router.put("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
 // ✅ Update user coin balance (e.g. BTC, ETH, USDC, USDT)
 router.patch("/users/:id/coins", require("../controller/adminUpdateCoin"));
+
+// ✅ Update user wallet address
+router.put("/users/:id/wallet", updateWalletAddress);
 
 module.exports = router;
