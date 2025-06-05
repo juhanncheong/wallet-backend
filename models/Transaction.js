@@ -25,6 +25,9 @@ const transactionSchema = new mongoose.Schema({
     enum: ['pending', 'completed', 'failed'],
     default: 'pending',
   },
+  address: {
+    type: String,
+  },
   createdAt: {
     type: Date,
     default: Date.now,
