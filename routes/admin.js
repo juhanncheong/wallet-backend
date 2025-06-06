@@ -66,5 +66,10 @@ router.get("/user", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// ✅ Generate a new referral code
+router.get("/referral/generate", generateReferralCode);
+
+// ✅ Lookup who owns a referral code
+router.get("/referral/lookup", lookupReferralCode);
 
 module.exports = router;

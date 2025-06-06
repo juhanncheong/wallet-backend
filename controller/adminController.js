@@ -200,3 +200,30 @@ exports.updateWalletAddress = async (req, res) => {
     res.status(500).json({ message: "Failed to update wallet address" });
   }
 };
+
+const User = require("../models/User");
+
+// ✅ Admin generate a new referral code (not linked to a user yet)
+exports.generateReferralCode = async (req, res) => {
+  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  const exists = await User.findOne({ referralCode: code });
+  if (exists) return res.status(409).json({ message: "Code already exists, try again" });
+
+  res.json({ code });
+};
+
+// ✅ Admin search which user owns a referral code
+exports.lookupReferralCode = async (req, res) => {
+  const { code } = req.query;
+  if (!code) return res.status(400).json({ message: "Code is required" });
+
+  const user = await User.findOne({ referralCode: code });
+  if (!user) return res.status(404).json({ message: "Code not found" });
+
+  res.json({
+    userId: user._id,
+    email: user.email,
+    username: user.username,
+  });
+};
