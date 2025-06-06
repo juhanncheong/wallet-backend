@@ -107,7 +107,10 @@ router.get("/user", authMiddleware, async (req, res) => {
     console.error("Fetch user error:", err);
     res.status(500).json({ message: "Server error" });
   }
-  router.post("/change-password", authMiddleware, async (req, res) => {
+});
+
+// ✅ Moved outside
+router.post("/change-password", authMiddleware, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
   try {
@@ -127,6 +130,7 @@ router.get("/user", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 router.post("/change-pin", authMiddleware, async (req, res) => {
   const { currentPin, newPin } = req.body;
 
@@ -149,10 +153,6 @@ router.post("/change-pin", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
-});
-
 
 
 module.exports = router;
