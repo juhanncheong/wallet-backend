@@ -60,8 +60,8 @@ router.post("/swap", auth, async (req, res) => {
   const { from, to, amount } = req.body;
 
   try {
-    // Validate input
-    if (!from || !to || !amount || from === to || amount <= 0) {
+    // ✅ Validate input
+    if (!from || !to || from === to || amount <= 0) {
       return res.status(400).json({ message: "Invalid swap request" });
     }
 
@@ -71,7 +71,24 @@ router.post("/swap", auth, async (req, res) => {
     const fromKey = from.toLowerCase();
     const toKey = to.toLowerCase();
 
-    // Normalize short keys to full coin names
+    if (user.coins[fromKey] < amount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
+
+    // ✅ Fetch live prices
+    console.log("📡 Fetching CoinGecko prices...");
+    const priceRes = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
+    );
+
+    const prices = {
+      bitcoin: priceRes.data.bitcoin.usd,
+      ethereum: priceRes.data.ethereum.usd,
+      usdc: 1,
+      usdt: 1,
+    };
+
+    // ✅ Normalize short keys to full coin names
     const keyMap = {
       btc: "bitcoin",
       eth: "ethereum",
@@ -82,61 +99,32 @@ router.post("/swap", auth, async (req, res) => {
     const normalizedFromKey = keyMap[fromKey];
     const normalizedToKey = keyMap[toKey];
 
-    if (!normalizedFromKey || !normalizedToKey) {
-      return res.status(400).json({ message: "Unsupported coin symbol" });
-    }
-
-    if (user.coins[normalizedFromKey] < amount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    console.log("📡 Fetching CoinGecko prices...");
-
-    const priceRes = await axios.get(
-  "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
-);
-
-const prices = {
-  bitcoin: priceRes.data.bitcoin.usd,
-  ethereum: priceRes.data.ethereum.usd,
-  usdc: 1,
-  usdt: 1,
-};
-
-console.log("🧪 Live Prices:", prices);
-
-    const prices = {
-      bitcoin: getPrice("BTC"),
-      ethereum: getPrice("ETH"),
-      usdc: 1,
-      usdt: 1,
-    };
+    const fromPrice = prices[normalizedFromKey];
+    const toPrice = prices[normalizedToKey];
 
     console.log("🧪 Swap Keys:", { fromKey, toKey });
     console.log("🧪 All Prices:", prices);
-
-    const fromPrice = prices[normalizedFromKey];
-    const toPrice = prices[normalizedToKey];
 
     if (!fromPrice || !toPrice) {
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
+    // ✅ Calculate values
     const fromValueUSD = amount * fromPrice;
     const feeUSD = fromValueUSD * 0.02;
     const netValueUSD = fromValueUSD - feeUSD;
     const toAmount = netValueUSD / toPrice;
 
-    // Update user balances
-    user.coins[normalizedFromKey] -= amount;
-    user.coins[normalizedToKey] += toAmount;
+    // ✅ Update user balances
+    user.coins[fromKey] -= amount;
+    user.coins[toKey] += toAmount;
     await user.save();
 
-    // Save swap history
+    // ✅ Save swap history
     await Swap.create({
       userId,
-      fromCoin: normalizedFromKey,
-      toCoin: normalizedToKey,
+      fromCoin: fromKey,
+      toCoin: toKey,
       fromAmount: amount,
       toAmount,
       feeUSD,
