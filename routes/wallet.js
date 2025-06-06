@@ -101,9 +101,11 @@ router.post("/swap", auth, async (req, res) => {
     const coinData = priceRes.data.data;
 
     function getPrice(symbol) {
-      const coin = coinData.find((c) => c.symbol === symbol);
-      return coin && coin.values?.USD?.price ? coin.values.USD.price : 0;
-    }
+  const coin = coinData.find(c => c.symbol === symbol);
+  if (!coin) console.log(`🚫 Coin not found: ${symbol}`);
+  else if (!coin.values?.USD?.price) console.log(`🚫 No USD price for ${symbol}`);
+  return coin && coin.values?.USD?.price ? coin.values.USD.price : 0;
+}
 
     const prices = {
       bitcoin: getPrice("BTC"),
