@@ -73,7 +73,7 @@ router.post("/swap", auth, async (req, res) => {
     if (user.coins[fromKey] < amount) {
       return res.status(400).json({ message: "Insufficient balance" });
     }
-
+    console.log("📡 Fetching CoinGecko prices...");
     // Fetch live prices from CoinGecko
     const priceRes = await axios.get(
       "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
@@ -117,10 +117,11 @@ router.post("/swap", auth, async (req, res) => {
       feeUSD: feeUSD.toFixed(2),
       newBalances: user.coins,
     });
-  } catch (err) {
-    console.error("Swap error:", err);
-    res.status(500).json({ message: "Internal server error" });
-  }
+    } catch (err) {
+  console.error("🔥 SWAP ERROR:", err.message);
+  console.error("🔥 STACK TRACE:", err.stack);
+  res.status(500).json({ message: "Internal server error" });
+}
 });
 
 module.exports = router;
