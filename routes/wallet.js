@@ -67,7 +67,12 @@ router.post("/swap", auth, async (req, res) => {
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
-
+    const keyMap = {
+  btc: "bitcoin",
+  eth: "ethereum",
+  usdc: "usdc",
+  usdt: "usdt",
+};
     const fromKey = from.toLowerCase();
     const toKey = to.toLowerCase();
 
