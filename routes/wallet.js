@@ -76,21 +76,19 @@ router.post("/swap", auth, async (req, res) => {
     }
 
     // ✅ Fetch live prices
-    console.log("📡 Fetching CoinGecko prices...");
     console.log("🌐 Fetching CoinGecko prices...");
-const priceRes = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd", {
-  headers: {
-    "User-Agent": "NEFTWallet/1.0 (https://neftwallet.com)" // ← add this!
-  }
-});
+    const priceRes = await axios.get(
+    "https://api.allorigins.win/get?url=" + encodeURIComponent("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd")
+);
+const parsed = JSON.parse(priceRes.data.contents); // extract actual data
 
+const prices = {
+  bitcoin: parsed.bitcoin.usd,
+  ethereum: parsed.ethereum.usd,
+  usdc: 1,
+  usdt: 1
+};
 
-    const prices = {
-      bitcoin: priceRes.data.bitcoin.usd,
-      ethereum: priceRes.data.ethereum.usd,
-      usdc: 1,
-      usdt: 1,
-    };
 
     // ✅ Normalize short keys to full coin names
     const keyMap = {
