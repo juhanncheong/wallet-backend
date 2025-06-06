@@ -201,40 +201,57 @@ exports.updateWalletAddress = async (req, res) => {
   }
 };
 
-// ✅ Admin generate a new referral code (not linked to a user yet)
-exports.generateReferralCode = async (req, res) => {
-  const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+const User = require("../models/User");
+const ReferralCode = require("../models/ReferralCode"); // NEW MODEL
 
-  // Save it to a dummy user temporarily (or allow Admin to assign it to a user)
-  res.json({ code }); // ✅ Keep this for frontend use
+// ✅ Admin manually creates a referral code (used for signup)
+exports.generateReferralCode = async (req, res) => {
+  const { code } = req.body;
+
+  if (!code) return res.status(400).json({ message: "Code is required" });
+
+  try {
+    const exists = await ReferralCode.findOne({ code });
+    if (exists) return res.status(400).json({ message: "Code already exists" });
+
+    await ReferralCode.create({ code });
+    res.json({ message: "Referral code created", code });
+  } catch (err) {
+    console.error("Create code error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 };
 
-
-// ✅ Admin search which user owns a referral code
+// ✅ Admin looks up which user owns a referralCode (generated after signup)
 exports.lookupReferralCode = async (req, res) => {
   const { code } = req.query;
   if (!code) return res.status(400).json({ message: "Code is required" });
 
-  const user = await User.findOne({ referralCode: code });
-  if (!user) return res.status(404).json({ message: "Code not found" });
+  try {
+    const user = await User.findOne({ referralCode: code });
+    if (!user) return res.status(404).json({ message: "Code not found" });
 
-  res.json({
-    userId: user._id,
-    email: user.email,
-    username: user.username,
-  });
+    res.json({
+      userId: user._id,
+      email: user.email,
+      username: user.username,
+    });
+  } catch (err) {
+    console.error("Lookup error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 };
+
+// ✅ Admin gets users who signed up using a specific referral (who referredBy = code)
 exports.getReferredUsers = async (req, res) => {
   const { code } = req.query;
-  const User = require("../models/User");
-
   if (!code) return res.status(400).json({ message: "Referral code is required" });
 
   try {
-    const referredUsers = await User.find({ referredBy: code });
+    const users = await User.find({ referredBy: code });
 
     res.json(
-      referredUsers.map(u => ({
+      users.map(u => ({
         _id: u._id,
         email: u.email,
         username: u.username,
@@ -246,3 +263,4 @@ exports.getReferredUsers = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+

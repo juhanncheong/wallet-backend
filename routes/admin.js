@@ -81,6 +81,6 @@ router.get("/user", async (req, res) => {
 });
 
 router.get("/referral/generate", generateReferralCode);
-router.get("/referral/lookup", lookupReferralCode);
+router.post("/referral/generate", generateReferralCode);
 
 module.exports = router;
