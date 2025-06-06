@@ -92,20 +92,18 @@ router.post("/swap", auth, async (req, res) => {
 
     console.log("📡 Fetching CoinGecko prices...");
 
-    const priceRes = await axios.get("https://api.cryptorank.io/v0/coins", {
-      headers: {
-        "User-Agent": "Mozilla/5.0 NEFTWallet",
-      },
-    });
+    const priceRes = await axios.get(
+  "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
+);
 
-    const coinData = priceRes.data.data;
+const prices = {
+  bitcoin: priceRes.data.bitcoin.usd,
+  ethereum: priceRes.data.ethereum.usd,
+  usdc: 1,
+  usdt: 1,
+};
 
-    function getPrice(symbol) {
-  const coin = coinData.find(c => c.symbol === symbol);
-  if (!coin) console.log(`🚫 Coin not found: ${symbol}`);
-  else if (!coin.values?.USD?.price) console.log(`🚫 No USD price for ${symbol}`);
-  return coin && coin.values?.USD?.price ? coin.values.USD.price : 0;
-}
+console.log("🧪 Live Prices:", prices);
 
     const prices = {
       bitcoin: getPrice("BTC"),
