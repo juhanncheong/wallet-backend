@@ -75,22 +75,22 @@ router.post("/swap", auth, async (req, res) => {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
-    // ✅ Fetch live prices
+    // ✅ Fetch live prices via proxy
     console.log("🌐 Fetching CoinGecko prices...");
     const priceRes = await axios.get(
-    "https://api.allorigins.win/get?url=" + encodeURIComponent("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd")
-);
-const parsed = JSON.parse(priceRes.data.contents); // extract actual data
+      "https://api.allorigins.win/get?url=" + encodeURIComponent(
+        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
+      )
+    );
+    const parsed = JSON.parse(priceRes.data.contents);
 
-const prices = {
-  bitcoin: parsed.bitcoin.usd,
-  ethereum: parsed.ethereum.usd,
-  usdc: 1,
-  usdt: 1
-};
+    const prices = {
+      bitcoin: parsed["bitcoin"]?.usd || 0,
+      ethereum: parsed["ethereum"]?.usd || 0,
+      usdc: parsed["usd-coin"]?.usd || 1,
+      usdt: parsed["tether"]?.usd || 1,
+    };
 
-
-    // ✅ Normalize short keys to full coin names
     const keyMap = {
       btc: "bitcoin",
       eth: "ethereum",
@@ -104,20 +104,16 @@ const prices = {
     const fromPrice = prices[normalizedFromKey];
     const toPrice = prices[normalizedToKey];
 
-    console.log("🧪 Swap Keys:", { fromKey, toKey });
-    console.log("🧪 All Prices:", prices);
-
     if (!fromPrice || !toPrice) {
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
-    // ✅ Calculate values
     const fromValueUSD = amount * fromPrice;
     const feeUSD = fromValueUSD * 0.02;
     const netValueUSD = fromValueUSD - feeUSD;
     const toAmount = netValueUSD / toPrice;
 
-    // ✅ Update user balances
+    // ✅ Update balances
     user.coins[fromKey] -= amount;
     user.coins[toKey] += toAmount;
     await user.save();
@@ -141,12 +137,14 @@ const prices = {
       feeUSD: feeUSD.toFixed(2),
       newBalances: user.coins,
     });
+
   } catch (err) {
     console.error("🔥 SWAP ERROR:", err.message);
     console.error("🔥 STACK TRACE:", err.stack);
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
 
 
 module.exports = router;
