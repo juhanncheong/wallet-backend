@@ -83,4 +83,38 @@ router.get("/user", async (req, res) => {
 router.get("/referral/generate", generateReferralCode);
 router.post("/referral/generate", generateReferralCode);
 
+const User = require("../models/User");
+
+// 🔍 Lookup who owns a referral code
+router.get("/referral/lookup/:code", async (req, res) => {
+  try {
+    const user = await User.findOne({ referralCode: req.params.code });
+    if (!user) return res.json({ success: false, message: "Code not found" });
+    res.json({ success: true, user: { email: user.email } });
+  } catch (err) {
+    console.error("Code lookup error:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// 🔍 Lookup referral info by email
+router.get("/referral/user/:email", async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.params.email });
+    if (!user) return res.json({ success: false, message: "User not found" });
+
+    const invitedUsers = await User.find({ referredBy: user.referralCode });
+    const invitedEmails = invitedUsers.map(u => u.email);
+
+    res.json({
+      success: true,
+      code: user.referralCode,
+      invited: invitedEmails
+    });
+  } catch (err) {
+    console.error("Referral info error:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
 module.exports = router;
