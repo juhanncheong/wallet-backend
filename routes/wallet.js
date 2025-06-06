@@ -91,13 +91,6 @@ const prices = {
   usdt: 1
 };
 
-    const prices = {
-      btc: priceRes.data.bitcoin.usd,
-      eth: priceRes.data.ethereum.usd,
-      usdc: priceRes.data["usd-coin"].usd,
-      usdt: priceRes.data.tether.usd,
-    };
-
     const fromPrice = prices[fromKey];
     const toPrice = prices[toKey];
 
