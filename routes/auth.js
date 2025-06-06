@@ -4,6 +4,8 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
+const ReferralCode = require("../models/ReferralCode");
+
 
 // Auth middleware to protect routes
 const authMiddleware = (req, res, next) => {
@@ -23,32 +25,38 @@ const authMiddleware = (req, res, next) => {
 router.post("/signup", async (req, res) => {
   const { username, email, password, referredBy } = req.body;
 
-  const userExists = await User.findOne({ email });
-  if (userExists) return res.status(400).json({ message: "User already exists" });
+  try {
+    const userExists = await User.findOne({ email });
+    if (userExists) return res.status(400).json({ message: "User already exists" });
 
-  if (!referredBy) {
-    return res.status(400).json({ message: "Referral code is required" });
+    if (!referredBy) {
+      return res.status(400).json({ message: "Referral code is required" });
+    }
+
+    // ✅ Check referral code in ReferralCode model
+    const validReferral = await ReferralCode.findOne({ code: referredBy });
+    if (!validReferral) {
+      return res.status(400).json({ message: "Invalid referral code" });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const newUser = new User({
+      username,
+      email,
+      password: hashedPassword,
+      referralCode,
+      referredBy,
+    });
+
+    await newUser.save();
+    res.status(201).json({ message: "User created successfully" });
+
+  } catch (error) {
+    console.error("Signup Error:", error);
+    res.status(500).json({ message: "Server error" });
   }
-
-  // ✅ Check referral code in ReferralCode model now
-  const validReferral = await ReferralCode.findOne({ code: referredBy });
-  if (!validReferral) {
-    return res.status(400).json({ message: "Invalid referral code" });
-  }
-
-  const hashedPassword = await bcrypt.hash(password, 10);
-  const referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-  const newUser = new User({
-    username,
-    email,
-    password: hashedPassword,
-    referralCode,
-    referredBy,
-  });
-
-  await newUser.save();
-  res.status(201).json({ message: "User created successfully" });
 });
 
 // Login
