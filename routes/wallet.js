@@ -100,6 +100,9 @@ const prices = {
     const fromPrice = prices[fromKey];
     const toPrice = prices[toKey];
 
+    if (!fromPrice || !toPrice) {
+  return res.status(400).json({ message: "Price lookup failed" });
+}
     const fromValueUSD = amount * fromPrice;
     const feeUSD = fromValueUSD * 0.02;
     const netValueUSD = fromValueUSD - feeUSD;
