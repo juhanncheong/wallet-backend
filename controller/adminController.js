@@ -202,21 +202,43 @@ exports.updateWalletAddress = async (req, res) => {
 };
 
 // ✅ Admin manually creates a referral code (used for signup)
+const User = require("../models/User");
 const ReferralCode = require("../models/ReferralCode");
 
 exports.generateReferralCode = async (req, res) => {
-  const { code } = req.body;
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ message: "Email is required" });
 
-  if (!code) return res.status(400).json({ message: "Code is required" });
+    const user = await User.findOne({ email });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-  const exists = await ReferralCode.findOne({ code });
-  if (exists) return res.status(400).json({ message: "Code already exists" });
+    if (user.referralCode) {
+      return res.status(400).json({ message: "User already has a referral code" });
+    }
 
-  const newCode = new ReferralCode({ code });
-  await newCode.save();
+    // Generate a unique referral code
+    let newCode;
+    let exists = true;
+    while (exists) {
+      newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      exists = await User.findOne({ referralCode: newCode });
+    }
 
-  res.json({ message: "Referral code created", code });
+    user.referralCode = newCode;
+    await user.save();
+
+    // Optionally track in global ReferralCode model too
+    const globalCode = new ReferralCode({ code: newCode });
+    await globalCode.save();
+
+    res.json({ success: true, code: newCode });
+  } catch (err) {
+    console.error("Referral code generation error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 };
+
 
 
 // ✅ Admin looks up which user owns a referralCode (generated after signup)
