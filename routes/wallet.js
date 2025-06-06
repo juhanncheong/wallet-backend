@@ -117,11 +117,13 @@ router.post("/swap", auth, async (req, res) => {
     const toAmount = netValueUSD / toPrice;
 
     // Update balances
-    if (!user.coins[fromKey]) user.coins[fromKey] = 0;
-if (!user.coins[toKey]) user.coins[toKey] = 0;
+    // Make sure balances are initialized
+user.coins[fromKey] = user.coins[fromKey] || 0;
+user.coins[toKey] = user.coins[toKey] || 0;
 
-user.coins[fromKey] -= amount;
-user.coins[toKey] += toAmount;
+// Deduct and add
+user.coins[fromKey] = parseFloat((user.coins[fromKey] - amount).toFixed(8));
+user.coins[toKey] = parseFloat((user.coins[toKey] + toAmount).toFixed(8));
 
 await user.save();
 
