@@ -104,17 +104,38 @@ router.get("/referral/user/:email", async (req, res) => {
     if (!user) return res.json({ success: false, message: "User not found" });
 
     const invitedUsers = await User.find({ referredBy: user.referralCode });
-    const invitedEmails = invitedUsers.map(u => u.email);
+    const invitedList = invitedUsers.map(u => ({
+      email: u.email,
+      username: u.username,
+      joined: u.createdAt
+    }));
 
     res.json({
       success: true,
       code: user.referralCode,
-      invited: invitedEmails
+      invited: invitedList
     });
   } catch (err) {
     console.error("Referral info error:", err);
     res.status(500).json({ success: false });
   }
 });
+
+// Admin removes referral code
+router.delete("/referral/remove/:email", async (req, res) => {
+  try {
+    const user = await User.findOne({ email: req.params.email });
+    if (!user) return res.json({ success: false, message: "User not found" });
+
+    user.referralCode = undefined;
+    await user.save();
+
+    res.json({ success: true, message: "Referral code removed" });
+  } catch (err) {
+    console.error("Delete referral error:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
 
 module.exports = router;
