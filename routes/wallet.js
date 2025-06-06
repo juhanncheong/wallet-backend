@@ -84,12 +84,18 @@ router.post("/swap", auth, async (req, res) => {
 
 const coinData = priceRes.data.data;
 
+function getPrice(symbol) {
+  const coin = coinData.find(c => c.symbol === symbol);
+  return coin && coin.values?.USD?.price ? coin.values.USD.price : 0;
+}
+
 const prices = {
-  btc: coinData.find(c => c.symbol === "BTC").values.USD.price,
-  eth: coinData.find(c => c.symbol === "ETH").values.USD.price,
+  btc: getPrice("BTC"),
+  eth: getPrice("ETH"),
   usdc: 1,
   usdt: 1
 };
+
 
     const fromPrice = prices[fromKey];
     const toPrice = prices[toKey];
