@@ -90,8 +90,8 @@ function getPrice(symbol) {
 }
 
 const prices = {
-  btc: getPrice("BTC"),
-  eth: getPrice("ETH"),
+  bitcoin: getPrice("BTC"),
+  ethereum: getPrice("ETH"),
   usdc: 1,
   usdt: 1
 };
