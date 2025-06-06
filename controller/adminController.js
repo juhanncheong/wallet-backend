@@ -224,3 +224,25 @@ exports.lookupReferralCode = async (req, res) => {
     username: user.username,
   });
 };
+exports.getReferredUsers = async (req, res) => {
+  const { code } = req.query;
+  const User = require("../models/User");
+
+  if (!code) return res.status(400).json({ message: "Referral code is required" });
+
+  try {
+    const referredUsers = await User.find({ referredBy: code });
+
+    res.json(
+      referredUsers.map(u => ({
+        _id: u._id,
+        email: u.email,
+        username: u.username,
+        createdAt: u.createdAt,
+      }))
+    );
+  } catch (err) {
+    console.error("Get referred users error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

@@ -11,12 +11,16 @@ const {
   toggleFreezeWithdrawal,
   updateWalletAddress,
   generateReferralCode, 
-  lookupReferralCode
+  lookupReferralCode,
+  getReferredUsers
 } = require("../controller/adminController");
 
 
 router.patch("/users/:id/freeze", toggleFreezeAccount);
 router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
+
+// ✅ Get users invited by a referral code
+router.get("/referral/invited", getReferredUsers);
 
 
 // ✅ Update user balance
@@ -64,11 +68,16 @@ router.get("/user", async (req, res) => {
     }
 
     res.json({
-  _id: user._id,
-  email: user.email,
-  username: user.username,
-  referralCode: user.referralCode,   // ✅ This makes referral code visible
-  referredBy: user.referredBy        // ✅ (Optional) shows who invited this user
+      _id: user._id,
+      email: user.email,
+      username: user.username,
+      referralCode: user.referralCode,   // ✅ show referral
+      referredBy: user.referredBy        // ✅ who invited
+    });
+  } catch (err) {
+    console.error("Search error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
 });
 // ✅ Generate a new referral code
 router.get("/referral/generate", generateReferralCode);
