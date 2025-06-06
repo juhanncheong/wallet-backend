@@ -60,73 +60,76 @@ router.post("/swap", auth, async (req, res) => {
   const { from, to, amount } = req.body;
 
   try {
-    // Validate inputs
+    // Validate input
     if (!from || !to || !amount || from === to || amount <= 0) {
       return res.status(400).json({ message: "Invalid swap request" });
     }
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
-    const keyMap = {
-  btc: "bitcoin",
-  eth: "ethereum",
-  usdc: "usdc",
-  usdt: "usdt",
-};
+
     const fromKey = from.toLowerCase();
     const toKey = to.toLowerCase();
 
-    // Ensure keys exist
-    user.coins[fromKey] = user.coins[fromKey] || 0;
-    user.coins[toKey] = user.coins[toKey] || 0;
-
-    // Check balance
-    if (user.coins[fromKey] < amount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    // Fetch live prices
-    const priceRes = await axios.get(
-      "https://api.allorigins.win/get?url=" +
-        encodeURIComponent("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd")
-    );
-    const parsed = JSON.parse(priceRes.data.contents);
-
-    const coinMap = {
+    const keyMap = {
       btc: "bitcoin",
       eth: "ethereum",
-      usdc: "usd-coin",
-      usdt: "tether",
+      usdc: "usdc",
+      usdt: "usdt",
     };
 
-    const fromCoinId = coinMap[fromKey];
-    const toCoinId = coinMap[toKey];
+    const fromCoin = keyMap[fromKey];
+    const toCoin = keyMap[toKey];
 
-    const fromPrice = parsed[fromCoinId]?.usd;
-    const toPrice = parsed[toCoinId]?.usd;
+    // 🌐 Fetch CoinGecko prices
+    const priceRes = await axios.get(
+      "https://api.allorigins.win/get?url=" +
+        encodeURIComponent(
+          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
+        )
+    );
+    const parsed = JSON.parse(priceRes.data.contents);
+    const prices = {
+      bitcoin: parsed.bitcoin.usd,
+      ethereum: parsed.ethereum.usd,
+      usdc: 1,
+      usdt: 1,
+    };
+
+    const fromPrice = prices[fromCoin];
+    const toPrice = prices[toCoin];
 
     if (!fromPrice || !toPrice) {
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
-    // Calculate conversion
-    const fromUSD = amount * fromPrice;
-    const feeUSD = fromUSD * 0.02;
-    const netUSD = fromUSD - feeUSD;
+    // Normalize balances
+    user.coins[fromKey] = parseFloat(user.coins[fromKey] || 0);
+    user.coins[toKey] = parseFloat(user.coins[toKey] || 0);
+    const amt = parseFloat(amount);
+
+    // Check balance with safety margin
+    if (user.coins[fromKey] < amt - 1e-8) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
+
+    // Fee and conversion
+    const fromValueUSD = amt * fromPrice;
+    const feeUSD = fromValueUSD * 0.02;
+    const netUSD = fromValueUSD - feeUSD;
     const toAmount = netUSD / toPrice;
 
-    // Deduct and add balances
-    user.coins[fromKey] = parseFloat((user.coins[fromKey] - amount).toFixed(8));
+    // Deduct and add
+    user.coins[fromKey] = parseFloat((user.coins[fromKey] - amt).toFixed(8));
     user.coins[toKey] = parseFloat((user.coins[toKey] + toAmount).toFixed(8));
-
     await user.save();
 
-    // Save history
+    // Record history
     await Swap.create({
       userId,
-      fromCoin: fromCoinId,
-      toCoin: toCoinId,
-      fromAmount: amount,
+      fromCoin,
+      toCoin,
+      fromAmount: amt,
       toAmount,
       feeUSD,
     });
@@ -135,14 +138,14 @@ router.post("/swap", auth, async (req, res) => {
       message: "Swap successful",
       from,
       to,
-      fromAmount: amount,
+      fromAmount: amt,
       toAmount: toAmount.toFixed(6),
       feeUSD: feeUSD.toFixed(2),
       newBalances: user.coins,
     });
-
   } catch (err) {
     console.error("🔥 SWAP ERROR:", err.message);
+    console.error("🔥 STACK TRACE:", err.stack);
     res.status(500).json({ message: "Internal server error" });
   }
 });
