@@ -60,7 +60,7 @@ router.post("/swap", auth, async (req, res) => {
   const { from, to, amount } = req.body;
 
   try {
-    // Validate input
+    // Validate inputs
     if (!from || !to || !amount || from === to || amount <= 0) {
       return res.status(400).json({ message: "Invalid swap request" });
     }
@@ -71,70 +71,56 @@ router.post("/swap", auth, async (req, res) => {
     const fromKey = from.toLowerCase();
     const toKey = to.toLowerCase();
 
-    // Map frontend keys to CoinGecko keys
-    const keyMap = {
+    // Ensure keys exist
+    user.coins[fromKey] = user.coins[fromKey] || 0;
+    user.coins[toKey] = user.coins[toKey] || 0;
+
+    // Check balance
+    if (user.coins[fromKey] < amount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
+
+    // Fetch live prices
+    const priceRes = await axios.get(
+      "https://api.allorigins.win/get?url=" +
+        encodeURIComponent("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd")
+    );
+    const parsed = JSON.parse(priceRes.data.contents);
+
+    const coinMap = {
       btc: "bitcoin",
       eth: "ethereum",
       usdc: "usd-coin",
       usdt: "tether",
     };
 
-    const fromCoin = keyMap[fromKey];
-    const toCoin = keyMap[toKey];
+    const fromCoinId = coinMap[fromKey];
+    const toCoinId = coinMap[toKey];
 
-    if (!fromCoin || !toCoin) {
-      return res.status(400).json({ message: "Invalid coin" });
-    }
-
-    // 🌐 Fetch CoinGecko prices via proxy
-    console.log("🌐 Fetching CoinGecko prices...");
-    const priceRes = await axios.get(
-      "https://api.allorigins.win/get?url=" +
-        encodeURIComponent(
-          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
-        )
-    );
-    const parsed = JSON.parse(priceRes.data.contents);
-
-    const prices = {
-      bitcoin: parsed.bitcoin.usd,
-      ethereum: parsed.ethereum.usd,
-      "usd-coin": 1,
-      tether: 1,
-    };
-
-    const fromPrice = prices[fromCoin];
-    const toPrice = prices[toCoin];
+    const fromPrice = parsed[fromCoinId]?.usd;
+    const toPrice = parsed[toCoinId]?.usd;
 
     if (!fromPrice || !toPrice) {
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
-    // Balance check
-    user.coins[fromKey] = user.coins[fromKey] || 0;
-    user.coins[toKey] = user.coins[toKey] || 0;
+    // Calculate conversion
+    const fromUSD = amount * fromPrice;
+    const feeUSD = fromUSD * 0.02;
+    const netUSD = fromUSD - feeUSD;
+    const toAmount = netUSD / toPrice;
 
-    if (user.coins[fromKey] < amount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    // Calculate values
-    const fromValueUSD = amount * fromPrice;
-    const feeUSD = fromValueUSD * 0.02;
-    const netValueUSD = fromValueUSD - feeUSD;
-    const toAmount = netValueUSD / toPrice;
-
-    // Update balances
+    // Deduct and add balances
     user.coins[fromKey] = parseFloat((user.coins[fromKey] - amount).toFixed(8));
     user.coins[toKey] = parseFloat((user.coins[toKey] + toAmount).toFixed(8));
 
     await user.save();
 
-    // Save swap history
+    // Save history
     await Swap.create({
       userId,
-      fromCoin,
-      toCoin,
+      fromCoin: fromCoinId,
+      toCoin: toCoinId,
       fromAmount: amount,
       toAmount,
       feeUSD,
@@ -149,9 +135,9 @@ router.post("/swap", auth, async (req, res) => {
       feeUSD: feeUSD.toFixed(2),
       newBalances: user.coins,
     });
+
   } catch (err) {
     console.error("🔥 SWAP ERROR:", err.message);
-    console.error("🔥 STACK TRACE:", err.stack);
     res.status(500).json({ message: "Internal server error" });
   }
 });
