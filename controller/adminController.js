@@ -205,11 +205,10 @@ exports.updateWalletAddress = async (req, res) => {
 exports.generateReferralCode = async (req, res) => {
   const code = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-  const exists = await User.findOne({ referralCode: code });
-  if (exists) return res.status(409).json({ message: "Code already exists, try again" });
-
-  res.json({ code });
+  // Save it to a dummy user temporarily (or allow Admin to assign it to a user)
+  res.json({ code }); // ✅ Keep this for frontend use
 };
+
 
 // ✅ Admin search which user owns a referral code
 exports.lookupReferralCode = async (req, res) => {

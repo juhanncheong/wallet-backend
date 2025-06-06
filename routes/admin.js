@@ -63,11 +63,12 @@ router.get("/user", async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    res.json(user);
-  } catch (err) {
-    console.error("Search error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
+    res.json({
+  _id: user._id,
+  email: user.email,
+  username: user.username,
+  referralCode: user.referralCode,   // ✅ This makes referral code visible
+  referredBy: user.referredBy        // ✅ (Optional) shows who invited this user
 });
 // ✅ Generate a new referral code
 router.get("/referral/generate", generateReferralCode);
