@@ -60,7 +60,6 @@ router.post("/swap", auth, async (req, res) => {
   const { from, to, amount } = req.body;
 
   try {
-    // ✅ Validate input
     if (!from || !to || from === to || amount <= 0) {
       return res.status(400).json({ message: "Invalid swap request" });
     }
@@ -75,13 +74,12 @@ router.post("/swap", auth, async (req, res) => {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
-    // ✅ Fetch live prices via proxy
+    // ✅ Use proxy to fetch prices safely
     console.log("🌐 Fetching CoinGecko prices...");
-    const priceRes = await axios.get(
-      "https://api.allorigins.win/get?url=" + encodeURIComponent(
-        "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
-      )
+    const proxyURL = "https://api.allorigins.win/get?url=" + encodeURIComponent(
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
     );
+    const priceRes = await axios.get(proxyURL);
     const parsed = JSON.parse(priceRes.data.contents);
 
     const prices = {
@@ -105,6 +103,7 @@ router.post("/swap", auth, async (req, res) => {
     const toPrice = prices[normalizedToKey];
 
     if (!fromPrice || !toPrice) {
+      console.log("🛑 Price lookup failed", prices);
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
@@ -113,12 +112,10 @@ router.post("/swap", auth, async (req, res) => {
     const netValueUSD = fromValueUSD - feeUSD;
     const toAmount = netValueUSD / toPrice;
 
-    // ✅ Update balances
     user.coins[fromKey] -= amount;
     user.coins[toKey] += toAmount;
     await user.save();
 
-    // ✅ Save swap history
     await Swap.create({
       userId,
       fromCoin: fromKey,
@@ -144,7 +141,6 @@ router.post("/swap", auth, async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
-
 
 
 module.exports = router;
