@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
+const Swap = require("../models/Swap");
 const auth = require("../middleware/auth");
 
 // POST /api/wallet/withdraw
@@ -48,6 +49,76 @@ router.post("/withdraw", auth, async (req, res) => {
     res.json({ message: "Withdrawal request submitted" });
   } catch (err) {
     console.error("Withdrawal error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// POST /api/wallet/swap
+router.post("/swap", auth, async (req, res) => {
+  const userId = req.user.userId;
+  const { from, to, amount } = req.body;
+
+  try {
+    // Validate input
+    if (!from || !to || !amount || from === to || amount <= 0) {
+      return res.status(400).json({ message: "Invalid swap request" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const fromKey = from.toLowerCase();
+    const toKey = to.toLowerCase();
+
+    if (user.coins[fromKey] < amount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
+
+    // Fetch live prices from CoinGecko
+    const priceRes = await axios.get(
+      "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
+    );
+    const prices = {
+      btc: priceRes.data.bitcoin.usd,
+      eth: priceRes.data.ethereum.usd,
+      usdc: priceRes.data["usd-coin"].usd,
+      usdt: priceRes.data.tether.usd,
+    };
+
+    const fromPrice = prices[fromKey];
+    const toPrice = prices[toKey];
+
+    const fromValueUSD = amount * fromPrice;
+    const feeUSD = fromValueUSD * 0.02;
+    const netValueUSD = fromValueUSD - feeUSD;
+    const toAmount = netValueUSD / toPrice;
+
+    // Update user balances
+    user.coins[fromKey] -= amount;
+    user.coins[toKey] += toAmount;
+    await user.save();
+
+    // Save swap history
+    await Swap.create({
+      userId,
+      fromCoin: fromKey,
+      toCoin: toKey,
+      fromAmount: amount,
+      toAmount,
+      feeUSD,
+    });
+
+    res.json({
+      message: "Swap successful",
+      from,
+      to,
+      fromAmount: amount,
+      toAmount: toAmount.toFixed(6),
+      feeUSD: feeUSD.toFixed(2),
+      newBalances: user.coins,
+    });
+  } catch (err) {
+    console.error("Swap error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
