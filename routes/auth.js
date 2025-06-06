@@ -105,6 +105,7 @@ router.get("/user", authMiddleware, async (req, res) => {
     res.json({
       username: user.username,
       email: user.email,
+      referralCode: user.referralCode,
       balance: totalBalance,
       coins: user.coins,
       wallets: user.wallets,
