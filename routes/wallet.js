@@ -3,6 +3,7 @@ const router = express.Router();
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const Swap = require("../models/Swap");
+const axios = require("axios");
 const auth = require("../middleware/auth");
 
 // POST /api/wallet/withdraw
