@@ -201,25 +201,23 @@ exports.updateWalletAddress = async (req, res) => {
   }
 };
 
-const ReferralCode = require("../models/ReferralCode"); // NEW MODEL
-
 // ✅ Admin manually creates a referral code (used for signup)
+const ReferralCode = require("../models/ReferralCode");
+
 exports.generateReferralCode = async (req, res) => {
   const { code } = req.body;
 
   if (!code) return res.status(400).json({ message: "Code is required" });
 
-  try {
-    const exists = await ReferralCode.findOne({ code });
-    if (exists) return res.status(400).json({ message: "Code already exists" });
+  const exists = await ReferralCode.findOne({ code });
+  if (exists) return res.status(400).json({ message: "Code already exists" });
 
-    await ReferralCode.create({ code });
-    res.json({ message: "Referral code created", code });
-  } catch (err) {
-    console.error("Create code error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
+  const newCode = new ReferralCode({ code });
+  await newCode.save();
+
+  res.json({ message: "Referral code created", code });
 };
+
 
 // ✅ Admin looks up which user owns a referralCode (generated after signup)
 exports.lookupReferralCode = async (req, res) => {

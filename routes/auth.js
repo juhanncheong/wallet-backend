@@ -31,9 +31,12 @@ router.post("/signup", async (req, res) => {
 }
 
 const referrer = await User.findOne({ referralCode: referredBy });
-if (!referrer) {
+const codeExists = await ReferralCode.findOne({ code: referredBy });
+
+if (!referrer && !codeExists) {
   return res.status(400).json({ message: "Invalid referral code" });
 }
+
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
