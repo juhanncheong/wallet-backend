@@ -72,13 +72,15 @@ router.get("/user", async (req, res) => {
       email: user.email,
       username: user.username,
       referralCode: user.referralCode,   // ✅ show referral
-      referredBy: user.referredBy        // ✅ who invited
+      referredBy: user.referredBy,       // ✅ who invited
+      wallets: user.wallets || {}        // ✅ include wallet data
     });
   } catch (err) {
     console.error("Search error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 router.get("/referral/generate", generateReferralCode);
 router.post("/referral/generate", generateReferralCode);
