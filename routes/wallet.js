@@ -71,53 +71,72 @@ router.post("/swap", auth, async (req, res) => {
     const fromKey = from.toLowerCase();
     const toKey = to.toLowerCase();
 
-    if (user.coins[fromKey] < amount) {
+    // Normalize short keys to full coin names
+    const keyMap = {
+      btc: "bitcoin",
+      eth: "ethereum",
+      usdc: "usdc",
+      usdt: "usdt",
+    };
+
+    const normalizedFromKey = keyMap[fromKey];
+    const normalizedToKey = keyMap[toKey];
+
+    if (!normalizedFromKey || !normalizedToKey) {
+      return res.status(400).json({ message: "Unsupported coin symbol" });
+    }
+
+    if (user.coins[normalizedFromKey] < amount) {
       return res.status(400).json({ message: "Insufficient balance" });
     }
+
     console.log("📡 Fetching CoinGecko prices...");
-    // Fetch live prices from CoinGecko
+
     const priceRes = await axios.get("https://api.cryptorank.io/v0/coins", {
-  headers: {
-    "User-Agent": "Mozilla/5.0 NEFTWallet"
-  }
-});
+      headers: {
+        "User-Agent": "Mozilla/5.0 NEFTWallet",
+      },
+    });
 
-const coinData = priceRes.data.data;
+    const coinData = priceRes.data.data;
 
-function getPrice(symbol) {
-  const coin = coinData.find(c => c.symbol === symbol);
-  return coin && coin.values?.USD?.price ? coin.values.USD.price : 0;
-}
+    function getPrice(symbol) {
+      const coin = coinData.find((c) => c.symbol === symbol);
+      return coin && coin.values?.USD?.price ? coin.values.USD.price : 0;
+    }
 
-const prices = {
-  bitcoin: getPrice("BTC"),
-  ethereum: getPrice("ETH"),
-  usdc: 1,
-  usdt: 1
-};
-
+    const prices = {
+      bitcoin: getPrice("BTC"),
+      ethereum: getPrice("ETH"),
+      usdc: 1,
+      usdt: 1,
+    };
 
     console.log("🧪 Swap Keys:", { fromKey, toKey });
     console.log("🧪 All Prices:", prices);
 
+    const fromPrice = prices[normalizedFromKey];
+    const toPrice = prices[normalizedToKey];
+
     if (!fromPrice || !toPrice) {
-  return res.status(400).json({ message: "Price lookup failed" });
-}
+      return res.status(400).json({ message: "Price lookup failed" });
+    }
+
     const fromValueUSD = amount * fromPrice;
     const feeUSD = fromValueUSD * 0.02;
     const netValueUSD = fromValueUSD - feeUSD;
     const toAmount = netValueUSD / toPrice;
 
     // Update user balances
-    user.coins[fromKey] -= amount;
-    user.coins[toKey] += toAmount;
+    user.coins[normalizedFromKey] -= amount;
+    user.coins[normalizedToKey] += toAmount;
     await user.save();
 
     // Save swap history
     await Swap.create({
       userId,
-      fromCoin: fromKey,
-      toCoin: toKey,
+      fromCoin: normalizedFromKey,
+      toCoin: normalizedToKey,
       fromAmount: amount,
       toAmount,
       feeUSD,
@@ -132,11 +151,12 @@ const prices = {
       feeUSD: feeUSD.toFixed(2),
       newBalances: user.coins,
     });
-    } catch (err) {
-  console.error("🔥 SWAP ERROR:", err.message);
-  console.error("🔥 STACK TRACE:", err.stack);
-  res.status(500).json({ message: "Internal server error" });
-}
+  } catch (err) {
+    console.error("🔥 SWAP ERROR:", err.message);
+    console.error("🔥 STACK TRACE:", err.stack);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
+
 
 module.exports = router;
