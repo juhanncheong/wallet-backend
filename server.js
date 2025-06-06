@@ -22,7 +22,6 @@ app.use("/api", require("./routes/auth"));
 app.use('/api/transactions', transactionRoutes);
 app.use("/api/wallet", require("./routes/wallet"));
 app.use("/api/wallet", walletRoutes);
-app.use("/admin", require("./routes/admin"));
 app.use("/admin", withdrawalRoutes);
 app.use("/admin/referral", require("./routes/referral"));
 
