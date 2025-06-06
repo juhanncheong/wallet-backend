@@ -201,8 +201,6 @@ exports.updateWalletAddress = async (req, res) => {
   }
 };
 
-const User = require("../models/User");
-
 // ✅ Admin generate a new referral code (not linked to a user yet)
 exports.generateReferralCode = async (req, res) => {
   const code = Math.random().toString(36).substring(2, 8).toUpperCase();
