@@ -10,7 +10,10 @@ const {
   toggleFreezeAccount,
   toggleFreezeWithdrawal,
   updateWalletAddress,
+  generateReferralCode, 
+  lookupReferralCode
 } = require("../controller/adminController");
+
 
 router.patch("/users/:id/freeze", toggleFreezeAccount);
 router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
