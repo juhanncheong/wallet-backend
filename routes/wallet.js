@@ -97,8 +97,8 @@ const prices = {
 };
 
 
-    const fromPrice = prices[fromKey];
-    const toPrice = prices[toKey];
+    console.log("🧪 Swap Keys:", { fromKey, toKey });
+    console.log("🧪 All Prices:", prices);
 
     if (!fromPrice || !toPrice) {
   return res.status(400).json({ message: "Price lookup failed" });
