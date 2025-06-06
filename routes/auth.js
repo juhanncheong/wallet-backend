@@ -21,13 +21,30 @@ const authMiddleware = (req, res, next) => {
 
 // Signup
 router.post("/signup", async (req, res) => {
-  const { username, email, password } = req.body;
+  const { username, email, password, referredBy } = req.body;
 
   const userExists = await User.findOne({ email });
   if (userExists) return res.status(400).json({ message: "User already exists" });
 
+  if (!referredBy) {
+  return res.status(400).json({ message: "Referral code is required" });
+}
+
+const referrer = await User.findOne({ referralCode: referredBy });
+if (!referrer) {
+  return res.status(400).json({ message: "Invalid referral code" });
+}
+
   const hashedPassword = await bcrypt.hash(password, 10);
-  const newUser = new User({ username, email, password: hashedPassword });
+  const referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+  const newUser = new User({
+  username,
+  email,
+  password: hashedPassword,
+  referralCode,
+  referredBy
+});
+
   await newUser.save();
 
   res.status(201).json({ message: "User created successfully" });

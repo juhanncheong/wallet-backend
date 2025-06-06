@@ -28,6 +28,14 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
   
+  referralCode: {
+  type: String,
+  unique: true,
+  sparse: true,
+},
+referredBy: {
+  type: String, // referralCode of the user who invited them
+},
   createdAt: {
     type: Date,
     default: Date.now,
