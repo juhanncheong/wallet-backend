@@ -202,7 +202,6 @@ exports.updateWalletAddress = async (req, res) => {
 };
 
 // ✅ Admin manually creates a referral code (used for signup)
-const User = require("../models/User");
 const ReferralCode = require("../models/ReferralCode");
 
 exports.generateReferralCode = async (req, res) => {
