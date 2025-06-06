@@ -117,6 +117,8 @@ router.post("/swap", auth, async (req, res) => {
     const toAmount = netValueUSD / toPrice;
 
     // Update balances
+    if (!user.coins[fromKey]) user.coins[fromKey] = 0;
+    if (!user.coins[toKey]) user.coins[toKey] = 0;
     user.coins[fromKey] -= amount;
     user.coins[toKey] += toAmount;
     await user.save();
