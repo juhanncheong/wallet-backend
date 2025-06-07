@@ -107,7 +107,8 @@ router.post("/swap", auth, async (req, res) => {
     const fromBalance = parseFloat(user.coins[fromKey]);
     const inputAmount = parseFloat(amount);
 
-    if (parseFloat(fromBalance.toFixed(8)) < parseFloat(inputAmount.toFixed(8)))
+    // Safe comparison to avoid floating-point error
+    if (parseFloat(fromBalance.toFixed(8)) < parseFloat(inputAmount.toFixed(8))) {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
