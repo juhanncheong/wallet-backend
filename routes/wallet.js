@@ -56,7 +56,7 @@ router.post("/withdraw", auth, async (req, res) => {
 });
 
 // POST /api/wallet/swap
-  router.post("/swap", auth, async (req, res) => {
+router.post("/swap", auth, async (req, res) => {
   const userId = req.user.userId;
   const { from, to, amount } = req.body;
 
@@ -80,6 +80,7 @@ router.post("/withdraw", auth, async (req, res) => {
     const fromCoin = keyMap[fromKey];
     const toCoin = keyMap[toKey];
 
+    // Fetch live prices
     const priceRes = await axios.get(
       "https://api.allorigins.win/get?url=" +
         encodeURIComponent(
@@ -100,27 +101,31 @@ router.post("/withdraw", auth, async (req, res) => {
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
+    // Init balances if missing
     user.coins[fromKey] = user.coins[fromKey] || 0;
     user.coins[toKey] = user.coins[toKey] || 0;
 
     const fromBalance = Big(user.coins[fromKey]);
     const inputAmount = Big(amount);
     const epsilon = Big("0.000000000000000001"); // 1e-18
-    
-if (fromBalance.plus(epsilon).lt(inputAmount)) {
+
+    if (fromBalance.plus(epsilon).lt(inputAmount)) {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
+    // Swap calculation
     const fromValueUSD = inputAmount.times(fromPrice);
     const feeUSD = fromValueUSD.times(0.02);
     const netUSD = fromValueUSD.minus(feeUSD);
     const toAmount = netUSD.div(toPrice);
 
+    // Update balances
     user.coins[fromKey] = fromBalance.minus(inputAmount).toFixed(18);
     user.coins[toKey] = Big(user.coins[toKey]).plus(toAmount).toFixed(18);
 
     await user.save();
 
+    // Log swap
     await Swap.create({
       userId,
       fromCoin,
