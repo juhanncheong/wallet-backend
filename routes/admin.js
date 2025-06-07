@@ -163,10 +163,10 @@ router.get("/admin/stats", async (req, res) => {
       BTC: 0, ETH: 0, USDC: 0, USDT: 0
     };
     users.forEach(user => {
-      walletDistribution.BTC += user.balances?.btc || 0;
-      walletDistribution.ETH += user.balances?.eth || 0;
-      walletDistribution.USDC += user.balances?.usdc || 0;
-      walletDistribution.USDT += user.balances?.usdt || 0;
+      walletDistribution.BTC += user.coins?.bitcoin || 0;
+      walletDistribution.ETH += user.coins?.ethereum || 0;
+      walletDistribution.USDC += user.coins?.usdc || 0;
+      walletDistribution.USDT += user.coins?.usdt || 0;
     });
 
     const referralCodes = await ReferralCode.countDocuments();
