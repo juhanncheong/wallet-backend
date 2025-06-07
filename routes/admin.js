@@ -88,8 +88,6 @@ router.get("/user", async (req, res) => {
 router.get("/referral/generate", generateReferralCode);
 router.post("/referral/generate", generateReferralCode);
 
-const User = require("../models/User");
-
 // 🔍 Lookup who owns a referral code
 router.get("/referral/lookup/:code", async (req, res) => {
   try {
