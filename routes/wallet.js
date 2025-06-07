@@ -100,31 +100,34 @@ router.post("/swap", auth, async (req, res) => {
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
-    user.coins[fromKey] = parseFloat(user.coins[fromKey] || 0);
-    user.coins[toKey] = parseFloat(user.coins[toKey] || 0);
+    // Ensure fields exist
+    user.coins[fromCoin] = user.coins[fromCoin] || 0;
+    user.coins[toCoin] = user.coins[toCoin] || 0;
 
-    const inputAmount = parseFloat(amount.toString().trim());
-const fromBalance = parseFloat(user.coins[fromKey]);
+    // Use Big.js for all math
+    const inputAmount = Big(amount.toString().trim());
+    const fromBalance = Big(user.coins[fromCoin].toString());
+    const epsilon = Big("0.000000000000000001");
 
-console.log("🧪 SWAP CHECK:", {
-  fromBalance,
-  inputAmount,
-  rawAmount: amount,
-  userBalanceField: user.coins[fromKey],
-});
+    console.log("🧪 SWAP CHECK:", {
+      fromBalance: fromBalance.toString(),
+      inputAmount: inputAmount.toString(),
+      userBalanceField: user.coins[fromCoin],
+    });
 
-if (fromBalance < inputAmount) {
-  return res.status(400).json({ message: "Insufficient balance" });
-}
+    if (fromBalance.plus(epsilon).lt(inputAmount)) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
 
+    const fromValueUSD = inputAmount.times(fromPrice);
+    const feeUSD = fromValueUSD.times(0.02);
+    const netUSD = fromValueUSD.minus(feeUSD);
+    const toAmount = netUSD.div(toPrice);
 
-    const fromValueUSD = inputAmount * fromPrice;
-    const feeUSD = fromValueUSD * 0.02;
-    const netUSD = fromValueUSD - feeUSD;
-    const toAmount = netUSD / toPrice;
-
-    user.coins[fromKey] = (fromBalance - inputAmount).toFixed(18);
-    user.coins[toKey] = (parseFloat(user.coins[toKey]) + toAmount).toFixed(18);
+    user.coins[fromCoin] = fromBalance.minus(inputAmount).toFixed(18);
+    user.coins[toCoin] = Big(user.coins[toCoin].toString())
+      .plus(toAmount)
+      .toFixed(18);
 
     await user.save();
 
