@@ -61,7 +61,7 @@ router.put("/users/:id/wallet", updateWalletAddress);
 router.get("/user", async (req, res) => {
   const { email, id } = req.query;
  
-  router.get("/users", auth, getAllUsers);
+  router.get("/users", getAllUsers);
 
   try {
     let user;
@@ -93,7 +93,7 @@ router.get("/user", async (req, res) => {
 
 router.get("/referral/generate", generateReferralCode);
 router.post("/referral/generate", generateReferralCode);
-router.post("/toggle-withdrawal-lock", auth, toggleWithdrawLock);
+router.post("/toggle-withdrawal-lock", toggleWithdrawLock);
 
 // 🔍 Lookup who owns a referral code
 router.get("/referral/lookup/:code", async (req, res) => {
@@ -175,7 +175,7 @@ router.get("/admin/stats", async (req, res) => {
 
     const registersThisMonth = await User.countDocuments({ createdAt: { $gte: startOfMonth } });
     const activeThisMonth = await User.countDocuments({ lastLogin: { $gte: startOfMonth } });
-
+    
     // WITHDRAWALS
     const pendingWithdrawals = await Transaction.countDocuments({ type: 'withdrawal', status: 'pending' });
     const withdrawalsToday = await Transaction.countDocuments({
