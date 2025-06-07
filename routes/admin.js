@@ -16,6 +16,7 @@ const {
   updateWalletAddress,
   generateReferralCode, 
   lookupReferralCode,
+  toggleWithdrawLock,
   getReferredUsers
 } = require("../controller/adminController");
 
@@ -85,6 +86,7 @@ router.get("/user", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 router.get("/referral/generate", generateReferralCode);
