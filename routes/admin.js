@@ -142,33 +142,58 @@ router.delete("/referral/remove/:email", async (req, res) => {
 
 router.get("/admin/stats", async (req, res) => {
   try {
-    const totalUsers = await User.countDocuments();
+    const now = new Date();
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    const activeUsers = await User.countDocuments({ lastLogin: { $gte: sevenDaysAgo } });
-
-    const pendingWithdrawals = await Transaction.countDocuments({ type: 'withdrawal', status: 'pending' });
-
-    const startOfToday = new Date();
+    // Today
+    const startOfToday = new Date(now);
     startOfToday.setHours(0, 0, 0, 0);
-    const approvedToday = await Transaction.countDocuments({
+
+    // Start of this week (Sunday)
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    // Start of month
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    // USER METRICS
+    const totalUsers = await User.countDocuments();
+    const activeUsers = await User.countDocuments({ lastLogin: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } });
+
+    const registersToday = await User.countDocuments({ createdAt: { $gte: startOfToday } });
+    const activeToday = await User.countDocuments({ lastLogin: { $gte: startOfToday } });
+
+    const registersThisWeek = await User.countDocuments({ createdAt: { $gte: startOfWeek } });
+    const activeThisWeek = await User.countDocuments({ lastLogin: { $gte: startOfWeek } });
+
+    const registersThisMonth = await User.countDocuments({ createdAt: { $gte: startOfMonth } });
+    const activeThisMonth = await User.countDocuments({ lastLogin: { $gte: startOfMonth } });
+
+    // WITHDRAWALS
+    const pendingWithdrawals = await Transaction.countDocuments({ type: 'withdrawal', status: 'pending' });
+    const withdrawalsToday = await Transaction.countDocuments({
       type: 'withdrawal',
       status: 'completed',
       createdAt: { $gte: startOfToday }
     });
+    const withdrawalsMonth = await Transaction.countDocuments({
+      type: 'withdrawal',
+      status: 'completed',
+      createdAt: { $gte: startOfMonth }
+    });
 
+    // WALLET DISTRIBUTION
     const users = await User.find();
-    const walletDistribution = {
-      BTC: 0, ETH: 0, USDC: 0, USDT: 0
-    };
+    const walletDistribution = { BTC: 0, ETH: 0, USDC: 0, USDT: 0 };
     users.forEach(user => {
       walletDistribution.BTC += user.coins?.bitcoin || 0;
       walletDistribution.ETH += user.coins?.ethereum || 0;
       walletDistribution.USDC += user.coins?.usdc || 0;
       walletDistribution.USDT += user.coins?.usdt || 0;
     });
+    const walletList = Object.entries(walletDistribution).map(([coin, value]) => ({ coin, value }));
 
+    // REFERRALS
     const referralCodes = await ReferralCode.countDocuments();
     const totalReferred = await User.countDocuments({ referredBy: { $ne: null } });
 
@@ -186,22 +211,33 @@ router.get("/admin/stats", async (req, res) => {
       topReferrer = owner?.email || null;
     }
 
-    const walletList = Object.entries(walletDistribution).map(([coin, value]) => ({ coin, value }));
+    res.json({
+      // User Overview
+      totalUsers,
+      activeUsers,
+      registersToday,
+      activeToday,
+      registersThisWeek,
+      activeThisWeek,
+      registersThisMonth,
+      activeThisMonth,
 
-res.json({
-  totalUsers,
-  activeUsers,
-  pendingWithdrawals,
-  approvedToday,
-  walletDistribution: walletList,
-  referralCodes,
-  totalReferred,
-  topReferrer
-});
+      // Withdrawals
+      pendingWithdrawals,
+      withdrawalsToday,
+      withdrawalsMonth,
+
+      // Wallet + Referrals
+      walletDistribution: walletList,
+      referralCodes,
+      totalReferred,
+      topReferrer
+    });
 
   } catch (err) {
     console.error("Stats error:", err);
     res.status(500).json({ message: "Server error fetching stats" });
   }
 });
+
 module.exports = router;
