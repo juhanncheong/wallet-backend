@@ -105,8 +105,9 @@ router.post("/withdraw", auth, async (req, res) => {
 
     const fromBalance = Big(user.coins[fromKey]);
     const inputAmount = Big(amount);
-
-    if (fromBalance.lt(inputAmount)) {
+    const epsilon = Big("0.000000000000000001"); // 1e-18
+    
+if (fromBalance.plus(epsilon).lt(inputAmount)) {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
