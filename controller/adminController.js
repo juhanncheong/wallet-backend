@@ -281,4 +281,19 @@ exports.getReferredUsers = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+const toggleWithdrawLock = async (req, res) => {
+  const { userId } = req.body;
+  try {
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isWithdrawLocked = !user.isWithdrawLocked;
+    await user.save();
+
+    res.status(200).json({ message: "Withdrawal lock toggled", isWithdrawLocked: user.isWithdrawLocked });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 

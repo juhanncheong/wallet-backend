@@ -22,6 +22,7 @@ const {
 router.patch("/users/:id/freeze", toggleFreezeAccount);
 router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
+
 // ✅ Get users invited by a referral code
 router.get("/referral/invited", getReferredUsers);
 
@@ -87,6 +88,7 @@ router.get("/user", async (req, res) => {
 
 router.get("/referral/generate", generateReferralCode);
 router.post("/referral/generate", generateReferralCode);
+router.post("/toggle-withdrawal-lock", auth, toggleWithdrawLock);
 
 // 🔍 Lookup who owns a referral code
 router.get("/referral/lookup/:code", async (req, res) => {
@@ -237,6 +239,24 @@ router.get("/admin/stats", async (req, res) => {
   } catch (err) {
     console.error("Stats error:", err);
     res.status(500).json({ message: "Server error fetching stats" });
+  }
+});
+// 🔓 Toggle withdrawal lock
+router.patch("/users/:id/toggle-withdrawal-lock", async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isWithdrawLocked = !user.isWithdrawLocked;
+    await user.save();
+
+    res.json({ 
+      message: `Withdrawal ${user.isWithdrawLocked ? "locked" : "unlocked"} successfully`,
+      isWithdrawLocked: user.isWithdrawLocked
+    });
+  } catch (err) {
+    console.error("Toggle withdrawal lock error:", err);
+    res.status(500).json({ message: "Internal server error" });
   }
 });
 

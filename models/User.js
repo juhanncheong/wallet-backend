@@ -28,6 +28,11 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
   
+  isWithdrawLocked: {
+  type: Boolean,
+  default: true, // 🔒 Locked by default for all new users
+},
+
   referralCode: {
   type: String,
   unique: true,

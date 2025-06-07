@@ -19,6 +19,9 @@ router.post("/withdraw", auth, async (req, res) => {
     if (user.isWithdrawFrozen) {
       return res.status(403).json({ message: "Withdrawals are frozen" });
     }
+    if (user.isWithdrawLocked) {
+    return res.status(403).json({ message: "Withdrawal locked – wallet not verified" });
+    }
 
     if (!user.withdrawalPin) return res.status(400).json({ message: "No PIN set" });
 
