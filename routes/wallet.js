@@ -103,12 +103,20 @@ router.post("/swap", auth, async (req, res) => {
     user.coins[fromKey] = parseFloat(user.coins[fromKey] || 0);
     user.coins[toKey] = parseFloat(user.coins[toKey] || 0);
 
-    const inputAmount = parseFloat(amount);
-    const fromBalance = parseFloat(user.coins[fromKey]);
+    const inputAmount = parseFloat(amount.toString().trim());
+const fromBalance = parseFloat(user.coins[fromKey]);
 
-    if (fromBalance < inputAmount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
+console.log("🧪 SWAP CHECK:", {
+  fromBalance,
+  inputAmount,
+  rawAmount: amount,
+  userBalanceField: user.coins[fromKey],
+});
+
+if (fromBalance < inputAmount) {
+  return res.status(400).json({ message: "Insufficient balance" });
+}
+
 
     const fromValueUSD = inputAmount * fromPrice;
     const feeUSD = fromValueUSD * 0.02;
