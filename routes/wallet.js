@@ -60,7 +60,6 @@ router.post("/swap", auth, async (req, res) => {
   const { from, to, amount } = req.body;
 
   try {
-    // Validate input
     if (!from || !to || !amount || from === to || amount <= 0) {
       return res.status(400).json({ message: "Invalid swap request" });
     }
@@ -68,7 +67,6 @@ router.post("/swap", auth, async (req, res) => {
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Map short keys to full CoinGecko IDs
     const keyMap = {
       btc: "bitcoin",
       eth: "ethereum",
@@ -78,11 +76,10 @@ router.post("/swap", auth, async (req, res) => {
 
     const fromKey = from.toLowerCase();
     const toKey = to.toLowerCase();
-
     const fromCoin = keyMap[fromKey];
     const toCoin = keyMap[toKey];
 
-    // Fetch prices
+    // Fetch live prices
     const priceRes = await axios.get(
       "https://api.allorigins.win/get?url=" +
         encodeURIComponent(
@@ -99,33 +96,30 @@ router.post("/swap", auth, async (req, res) => {
 
     const fromPrice = prices[fromCoin];
     const toPrice = prices[toCoin];
-
     if (!fromPrice || !toPrice) {
       return res.status(400).json({ message: "Price lookup failed" });
     }
 
-    // Initialize balances safely
-    user.coins[fromKey] = parseFloat(user.coins[fromKey]) || 0;
-    user.coins[toKey] = parseFloat(user.coins[toKey]) || 0;
+    // Ensure balances are initialized
+    user.coins[fromKey] = user.coins[fromKey] || 0;
+    user.coins[toKey] = user.coins[toKey] || 0;
 
-    const fromBalance = Number(user.coins[fromKey]) || 0;
-const safeAmount = Number(amount);
+    const fromBalance = parseFloat(user.coins[fromKey]);
+    const inputAmount = parseFloat(amount);
 
-if (fromBalance + 1e-8 < safeAmount) {
-  return res.status(400).json({ message: "Insufficient balance" });
-}
+    if (fromBalance + 1e-8 < inputAmount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
 
-
-    // Conversion calculation
-    const fromValueUSD = amount * fromPrice;
+    // Swap calculation
+    const fromValueUSD = inputAmount * fromPrice;
     const feeUSD = fromValueUSD * 0.02;
-    const netValueUSD = fromValueUSD - feeUSD;
-    const toAmount = netValueUSD / toPrice;
+    const netUSD = fromValueUSD - feeUSD;
+    const toAmount = netUSD / toPrice;
 
-    // Deduct and Add
-    user.coins[fromKey] = parseFloat((fromBalance - amount).toFixed(8));
-    user.coins[toKey] = parseFloat((user.coins[toKey] + toAmount).toFixed(8));
-
+    // Update balances
+    user.coins[fromKey] = parseFloat((fromBalance - inputAmount).toFixed(8));
+    user.coins[toKey] = parseFloat((parseFloat(user.coins[toKey]) + toAmount).toFixed(8));
     await user.save();
 
     // Save swap history
@@ -133,7 +127,7 @@ if (fromBalance + 1e-8 < safeAmount) {
       userId,
       fromCoin,
       toCoin,
-      fromAmount: amount,
+      fromAmount: inputAmount,
       toAmount,
       feeUSD,
     });
@@ -142,7 +136,7 @@ if (fromBalance + 1e-8 < safeAmount) {
       message: "Swap successful",
       from,
       to,
-      fromAmount: amount,
+      fromAmount: inputAmount,
       toAmount: toAmount.toFixed(6),
       feeUSD: feeUSD.toFixed(2),
       newBalances: user.coins,
