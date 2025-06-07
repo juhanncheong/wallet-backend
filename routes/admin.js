@@ -147,7 +147,7 @@ router.delete("/referral/remove/:email", async (req, res) => {
   }
 });
 
-router.get("/admin/stats", async (req, res) => {
+router.get("/stats", async (req, res) => {
   try {
     const now = new Date();
 
