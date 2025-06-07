@@ -6,6 +6,7 @@ const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
 
 const {
+  getAllUsers,
   updateUserBalance,
   changeUsername,
   changeEmail,
@@ -59,7 +60,8 @@ router.put("/users/:id/wallet", updateWalletAddress);
 // ✅ Search user by email or ID
 router.get("/user", async (req, res) => {
   const { email, id } = req.query;
-  
+ 
+  router.get("/users", auth, getAllUsers);
 
   try {
     let user;
