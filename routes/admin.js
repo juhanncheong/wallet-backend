@@ -54,6 +54,8 @@ router.put("/users/:id/wallet", updateWalletAddress);
 router.get("/user", async (req, res) => {
   const { email, id } = req.query;
   const User = require("../models/User");
+  const Transaction = require("../models/Transaction");
+  const ReferralCode = require("../models/ReferralCode");
 
   try {
     let user;
@@ -139,5 +141,68 @@ router.delete("/referral/remove/:email", async (req, res) => {
   }
 });
 
+router.get("/admin/stats", async (req, res) => {
+  try {
+    const totalUsers = await User.countDocuments();
 
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    const activeUsers = await User.countDocuments({ lastLogin: { $gte: sevenDaysAgo } });
+
+    const pendingWithdrawals = await Transaction.countDocuments({ type: 'withdrawal', status: 'pending' });
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const approvedToday = await Transaction.countDocuments({
+      type: 'withdrawal',
+      status: 'completed',
+      createdAt: { $gte: startOfToday }
+    });
+
+    const users = await User.find();
+    const walletDistribution = {
+      BTC: 0, ETH: 0, USDC: 0, USDT: 0
+    };
+    users.forEach(user => {
+      walletDistribution.BTC += user.balances?.btc || 0;
+      walletDistribution.ETH += user.balances?.eth || 0;
+      walletDistribution.USDC += user.balances?.usdc || 0;
+      walletDistribution.USDT += user.balances?.usdt || 0;
+    });
+
+    const referralCodes = await ReferralCode.countDocuments();
+    const totalReferred = await User.countDocuments({ referredBy: { $ne: null } });
+
+    const topReferrerAgg = await User.aggregate([
+      { $match: { referredBy: { $ne: null } } },
+      { $group: { _id: '$referredBy', count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 1 }
+    ]);
+
+    let topReferrer = null;
+    if (topReferrerAgg.length > 0) {
+      const ref = topReferrerAgg[0]._id;
+      const owner = await User.findOne({ referralCode: ref });
+      topReferrer = owner?.email || null;
+    }
+
+    const walletList = Object.entries(walletDistribution).map(([coin, value]) => ({ coin, value }));
+
+res.json({
+  totalUsers,
+  activeUsers,
+  pendingWithdrawals,
+  approvedToday,
+  walletDistribution: walletList,
+  referralCodes,
+  totalReferred,
+  topReferrer
+});
+
+  } catch (err) {
+    console.error("Stats error:", err);
+    res.status(500).json({ message: "Server error fetching stats" });
+  }
+});
 module.exports = router;
