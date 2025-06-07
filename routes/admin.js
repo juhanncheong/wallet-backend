@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const ReferralCode = require("../models/ReferralCode");
+const auth = require("../middleware/auth");
 
 const {
   updateUserBalance,
