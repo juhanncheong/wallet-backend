@@ -107,8 +107,8 @@ router.post("/swap", auth, async (req, res) => {
     const fromBalance = parseFloat(user.coins[fromKey]);
     const inputAmount = parseFloat(amount);
 
-    // Safe comparison to avoid floating-point error
-    if (parseFloat(fromBalance.toFixed(8)) < parseFloat(inputAmount.toFixed(8))) {
+    // Precision-safe comparison
+    if (fromBalance + 1e-12 < inputAmount) {
       return res.status(400).json({ message: "Insufficient balance" });
     }
 
@@ -119,8 +119,10 @@ router.post("/swap", auth, async (req, res) => {
     const toAmount = netUSD / toPrice;
 
     // Update balances
-    user.coins[fromKey] = parseFloat((fromBalance - inputAmount).toFixed(8));
-    user.coins[toKey] = parseFloat((parseFloat(user.coins[toKey]) + toAmount).toFixed(8));
+    user.coins[fromKey] = parseFloat((fromBalance - inputAmount).toFixed(18));
+    user.coins[toKey] = parseFloat(
+      (parseFloat(user.coins[toKey]) + toAmount).toFixed(18)
+    );
     await user.save();
 
     // Save swap history
@@ -147,4 +149,5 @@ router.post("/swap", auth, async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
 module.exports = router;
