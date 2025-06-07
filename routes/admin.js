@@ -1,5 +1,8 @@
 const express = require("express");
 const router = express.Router();
+const User = require("../models/User");
+const Transaction = require("../models/Transaction");
+const ReferralCode = require("../models/ReferralCode");
 
 const {
   updateUserBalance,
@@ -53,9 +56,7 @@ router.put("/users/:id/wallet", updateWalletAddress);
 // ✅ Search user by email or ID
 router.get("/user", async (req, res) => {
   const { email, id } = req.query;
-  const User = require("../models/User");
-  const Transaction = require("../models/Transaction");
-  const ReferralCode = require("../models/ReferralCode");
+  
 
   try {
     let user;
