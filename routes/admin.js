@@ -335,18 +335,26 @@ router.patch("/users/:id/coin-availability", async (req, res) => {
   }
 });
 
-// Should look like this
 router.get('/user-lookup', async (req, res) => {
-  const query = req.query.query?.trim();
-  if (!query) return res.status(400).json({ message: 'Query required' });
+  const { query } = req.query;
+  if (!query) return res.status(400).json({ message: "Missing query" });
 
-  const user = await User.findOne({
-    $or: [{ email: query }, { _id: query }]
-  });
+  try {
+    const user = await User.findOne({
+      $or: [
+        { email: query },
+        { _id: query }
+      ]
+    });
 
-  if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-  res.json({ user });
+    res.json({ user });
+  } catch (err) {
+    console.error("User lookup error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
 });
+
 
 module.exports = router;
