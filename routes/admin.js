@@ -5,6 +5,7 @@ const Transaction = require("../models/Transaction");
 const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
 const Coin = require('../models/Coin');
+const adminAuth = require('../middleware/adminAuth');
 
 const {
   getAllUsers,
@@ -333,4 +334,19 @@ router.patch("/users/:id/coin-availability", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+// Should look like this
+router.get('/user-lookup', adminAuth, async (req, res) => {
+  const query = req.query.query?.trim();
+  if (!query) return res.status(400).json({ message: 'Query required' });
+
+  const user = await User.findOne({
+    $or: [{ email: query }, { _id: query }]
+  });
+
+  if (!user) return res.status(404).json({ message: 'User not found' });
+
+  res.json({ user });
+});
+
 module.exports = router;
