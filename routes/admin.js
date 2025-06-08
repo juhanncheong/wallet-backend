@@ -4,6 +4,7 @@ const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
+const Coin = require('../models/Coin');
 
 const {
   getAllUsers,
@@ -264,5 +265,27 @@ router.patch("/users/:id/toggle-withdrawal-lock", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+router.post('/toggle-coin-send', async (req, res) => {
+  const { coin, status } = req.body;
 
+  try {
+    const updated = await Coin.findOneAndUpdate(
+      { name: coin },
+      { sendEnabled: status },
+      { new: true, upsert: true }
+    );
+
+    res.json({ message: `Send status updated for ${coin}`, data: updated });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to update send status', error: err.message });
+  }
+});
+router.get('/coin-status', async (req, res) => {
+  try {
+    const coins = await Coin.find({});
+    res.json(coins);
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to fetch coin status', error: err.message });
+  }
+});
 module.exports = router;
