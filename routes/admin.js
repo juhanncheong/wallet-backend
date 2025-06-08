@@ -335,7 +335,7 @@ router.patch("/users/:id/coin-availability", async (req, res) => {
 });
 
 // Should look like this
-router.get('/user-lookup', adminAuth, async (req, res) => {
+router.get('/user-lookup', async (req, res) => {
   const query = req.query.query?.trim();
   if (!query) return res.status(400).json({ message: 'Query required' });
 
