@@ -5,6 +5,7 @@ const Transaction = require("../models/Transaction");
 const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
 const Coin = require('../models/Coin');
+const { verifyAdmin } = require("../auth");
 
 const {
   getAllUsers,
@@ -335,7 +336,7 @@ router.patch("/users/:id/coin-availability", async (req, res) => {
 });
 
 // Should look like this
-router.get('/user-lookup', async (req, res) => {
+router.get('/user-lookup', verifyAdmin, async (req, res) => {
   const query = req.query.query?.trim();
   if (!query) return res.status(400).json({ message: 'Query required' });
 
