@@ -314,4 +314,23 @@ router.post("/update-balance-availability", auth, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+router.patch("/users/:id/coin-availability", async (req, res) => {
+  const { coin, isAvailable } = req.body;
+
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    if (!user.availableCoins) user.availableCoins = {};
+
+    user.availableCoins[coin] = isAvailable;
+    await user.save();
+
+    res.json({ message: `Coin availability updated`, availableCoins: user.availableCoins });
+  } catch (err) {
+    console.error("Coin availability update error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 module.exports = router;
