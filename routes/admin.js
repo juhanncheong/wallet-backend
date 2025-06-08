@@ -288,4 +288,30 @@ router.get('/coin-status', async (req, res) => {
     res.status(500).json({ message: 'Failed to fetch coin status', error: err.message });
   }
 });
+router.post("/update-balance-availability", auth, async (req, res) => {
+  try {
+    const { userId, coin, from, to, amount } = req.body;
+
+    if (!userId || !coin || !from || !to || typeof amount !== "number") {
+      return res.status(400).json({ message: "Invalid request" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // Example: moving from 'available' to 'unavailable'
+    if (user.coins[coin][from] < amount) {
+      return res.status(400).json({ message: "Insufficient funds in source" });
+    }
+
+    user.coins[coin][from] -= amount;
+    user.coins[coin][to] += amount;
+
+    await user.save();
+    res.json({ message: "Balance updated successfully", coins: user.coins[coin] });
+  } catch (err) {
+    console.error("Error updating balance availability", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
 module.exports = router;
