@@ -23,7 +23,7 @@ const authMiddleware = (req, res, next) => {
 
 // Signup
 router.post("/signup", async (req, res) => {
-  const { username, email, password, referredBy } = req.body;
+  const { username, email, password, referredBy,withdrawalPin  } = req.body;
 
   try {
     const userExists = await User.findOne({ email });
@@ -39,15 +39,16 @@ router.post("/signup", async (req, res) => {
       return res.status(400).json({ message: "Invalid referral code" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
+    
     const referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
     const newUser = new User({
       username,
       email,
-      password: hashedPassword,
+      password,
       referralCode,
       referredBy,
+      withdrawalPin
     });
 
     await newUser.save();
@@ -129,11 +130,11 @@ router.post("/change-password", authMiddleware, async (req, res) => {
     const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const isMatch = await bcrypt.compare(currentPassword, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Current password is incorrect" });
+    if (user.password !== currentPassword) {
+      return res.status(400).json({ message: "Current password is incorrect" });
+    }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    user.password = hashedPassword;
+    user.password = newPassword; // Save plain password
     await user.save();
 
     res.json({ message: "Password updated successfully" });
@@ -143,6 +144,7 @@ router.post("/change-password", authMiddleware, async (req, res) => {
   }
 });
 
+
 router.post("/change-pin", authMiddleware, async (req, res) => {
   const { currentPin, newPin } = req.body;
 
@@ -150,13 +152,11 @@ router.post("/change-pin", authMiddleware, async (req, res) => {
     const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    const isMatch = await bcrypt.compare(currentPin, user.withdrawalPin);
-    if (!isMatch) {
+    if (user.withdrawalPin !== currentPin) {
       return res.status(400).json({ message: "Current PIN is incorrect" });
     }
 
-    const hashedPin = await bcrypt.hash(newPin, 10);
-    user.withdrawalPin = hashedPin;
+    user.withdrawalPin = newPin;
     await user.save();
 
     res.json({ message: "Withdrawal PIN updated successfully" });
@@ -165,6 +165,7 @@ router.post("/change-pin", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 module.exports = router;
