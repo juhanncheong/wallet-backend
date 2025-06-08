@@ -1,12 +1,18 @@
 const User = require("../models/User");
-const Transaction = require("../models/Transaction"); // if you save transactions
+const Transaction = require("../models/Transaction");
 
 module.exports = async (req, res) => {
   const { id } = req.params;
-  const { coin, amount, type } = req.body;
+  let { coin, amount, type } = req.body;
 
   if (!coin || !amount || !type) {
     return res.status(400).json({ message: "Missing coin, amount, or type" });
+  }
+
+  // Force float number
+  amount = parseFloat(amount);
+  if (isNaN(amount) || amount <= 0) {
+    return res.status(400).json({ message: "Invalid amount" });
   }
 
   try {
@@ -15,15 +21,16 @@ module.exports = async (req, res) => {
 
     if (!user.coins) user.coins = {};
 
-    const current = user.coins[coin] || 0;
+    const current = parseFloat(user.coins[coin] || 0);
     const updatedAmount = type === "remove" ? current - amount : current + amount;
 
     if (updatedAmount < 0) return res.status(400).json({ message: "Insufficient balance" });
 
-    user.coins[coin] = updatedAmount;
+    // 🔥 Ensure float is saved
+    user.coins[coin] = parseFloat(updatedAmount.toFixed(8));
     await user.save();
 
-    // ✅ Log transaction
+    // ✅ Save transaction
     await Transaction.create({
       userId: id,
       type: type === "remove" ? "withdrawal" : "deposit",
