@@ -335,17 +335,21 @@ router.patch("/users/:id/coin-availability", async (req, res) => {
   }
 });
 
+const mongoose = require("mongoose");
+
 router.get('/user-lookup', async (req, res) => {
   const { query } = req.query;
   if (!query) return res.status(400).json({ message: "Missing query" });
 
   try {
-    const user = await User.findOne({
-      $or: [
-        { email: query },
-        { _id: query }
-      ]
-    });
+    const conditions = [{ email: query }];
+
+    // Only search _id if valid ObjectId
+    if (mongoose.Types.ObjectId.isValid(query)) {
+      conditions.push({ _id: query });
+    }
+
+    const user = await User.findOne({ $or: conditions });
 
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -355,6 +359,7 @@ router.get('/user-lookup', async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
 
 
 module.exports = router;
