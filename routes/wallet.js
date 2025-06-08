@@ -9,11 +9,15 @@ const Big = require("big.js");
 
 // POST /api/wallet/withdraw
 router.post("/withdraw", auth, async (req, res) => {
-  const { coin, amount, pin, address } = req.body; // ✅ include address
+  const { coin, amount, pin, address } = req.body;
+  console.log("🚀 Withdraw Request Body:", { coin, amount, pin, address });
+
   const userId = req.user.userId;
 
   try {
     const user = await User.findById(userId);
+    console.log("🧠 Found User:", user?.email || "Not found", "PIN Set:", !!user?.withdrawalPin);
+
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (user.isWithdrawFrozen) {
