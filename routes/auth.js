@@ -52,7 +52,7 @@ router.post("/signup", async (req, res) => {
     });
 
     await newUser.save();
-    res.status(201).json({ message: "User created successfully" });
+    res.status(201).json({ message: "Account Created successfully" });
 
   } catch (error) {
     console.error("Signup Error:", error);
