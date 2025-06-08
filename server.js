@@ -3,7 +3,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
-const cors = require("cors");
 const User = require("./models/User");
 const Withdrawal = require("./models/Withdrawal");
 const Coin = require("./models/Coin");
