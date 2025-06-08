@@ -109,10 +109,11 @@ router.get("/user", authMiddleware, async (req, res) => {
   balance: totalBalance,
   coins: user.coins,
   wallets: user.wallets,
-  availableCoins: user.availableCoins || {}, // ✅ ADD THIS
+  availableCoins: user.availableCoins || {},
   isFrozen: user.isFrozen,
   isWithdrawFrozen: user.isWithdrawFrozen,
   createdAt: user.createdAt,
+  availableCoins: user.availableCoins,
 });
   } catch (err) {
     console.error("Fetch user error:", err);
