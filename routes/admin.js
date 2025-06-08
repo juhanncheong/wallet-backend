@@ -5,7 +5,6 @@ const Transaction = require("../models/Transaction");
 const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
 const Coin = require('../models/Coin');
-const adminAuth = require('../middleware/adminAuth');
 
 const {
   getAllUsers,
