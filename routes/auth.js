@@ -103,16 +103,17 @@ router.get("/user", authMiddleware, async (req, res) => {
       (user.coins?.usdt || 0) * usdtUsd;
 
     res.json({
-      username: user.username,
-      email: user.email,
-      referralCode: user.referralCode,
-      balance: totalBalance,
-      coins: user.coins,
-      wallets: user.wallets,
-      isFrozen: user.isFrozen,
-      isWithdrawFrozen: user.isWithdrawFrozen,
-      createdAt: user.createdAt,
-    });
+  username: user.username,
+  email: user.email,
+  referralCode: user.referralCode,
+  balance: totalBalance,
+  coins: user.coins,
+  wallets: user.wallets,
+  availableCoins: user.availableCoins || {}, // ✅ ADD THIS
+  isFrozen: user.isFrozen,
+  isWithdrawFrozen: user.isWithdrawFrozen,
+  createdAt: user.createdAt,
+});
   } catch (err) {
     console.error("Fetch user error:", err);
     res.status(500).json({ message: "Server error" });
