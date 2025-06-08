@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const jwt = require('jsonwebtoken');
-
+const cors = require("cors");
 const User = require("./models/User");
 const Withdrawal = require("./models/Withdrawal");
 const Coin = require("./models/Coin");
@@ -11,6 +11,9 @@ const Admin = require("./models/Admin");
 const transactionRoutes = require('./routes/transaction');
 const walletRoutes = require('./routes/wallet');
 const app = express();
+app.use(cors({
+  origin: '*', // ⚠️ You can restrict this later to only your frontend URL
+}));
 const withdrawalRoutes = require("./routes/withdrawals");
 
 dotenv.config();
