@@ -9,15 +9,11 @@ const Big = require("big.js");
 
 // POST /api/wallet/withdraw
 router.post("/withdraw", auth, async (req, res) => {
-  const { coin, amount, pin, address } = req.body;
-  console.log("🚀 Withdraw Request Body:", { coin, amount, pin, address });
-
+  const { coin, amount, pin, address } = req.body; // ✅ include address
   const userId = req.user.userId;
 
   try {
     const user = await User.findById(userId);
-    console.log("🧠 Found User:", user?.email || "Not found", "PIN Set:", !!user?.withdrawalPin);
-
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (user.isWithdrawFrozen) {
@@ -33,18 +29,17 @@ router.post("/withdraw", auth, async (req, res) => {
     const isMatch = await require("bcryptjs").compare(pin, user.withdrawalPin);
     if (!isMatch) return res.status(401).json({ message: "Invalid PIN" });
 
-    const availableBalance = Big(user.coins[coin]?.available?.toString() || "0");
-if (availableBalance.lt(amount)) {
-  return res.status(400).json({ message: "Insufficient balance" });
-}
+    if (user.coins[coin] < amount) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
 
-if (!address || address.length < 8) {
-  return res.status(400).json({ message: "Invalid wallet address" });
-}
+    if (!address || address.length < 8) {
+      return res.status(400).json({ message: "Invalid wallet address" });
+    }
 
-// Deduct coin
-user.coins[coin].available = availableBalance.minus(amount).toFixed(8);
-await user.save();
+    // Deduct coin
+    user.coins[coin] -= amount;
+    await user.save();
 
     // Create transaction
     await Transaction.create({
