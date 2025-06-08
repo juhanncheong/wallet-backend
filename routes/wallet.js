@@ -33,9 +33,9 @@ router.post("/withdraw", auth, async (req, res) => {
     const isMatch = await require("bcryptjs").compare(pin, user.withdrawalPin);
     if (!isMatch) return res.status(401).json({ message: "Invalid PIN" });
 
-    if (user.coins[coin] < amount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
+    if ((user.coins[coin]?.available || 0) < amount) {
+  return res.status(400).json({ message: "Insufficient balance" });
+}
 
     if (!address || address.length < 8) {
       return res.status(400).json({ message: "Invalid wallet address" });

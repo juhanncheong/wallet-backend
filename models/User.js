@@ -12,22 +12,10 @@ const userSchema = new mongoose.Schema({
   },
 
   coins: {
-  bitcoin: {
-    available: { type: Number, default: 0 },
-    unavailable: { type: Number, default: 0 }
-  },
-  ethereum: {
-    available: { type: Number, default: 0 },
-    unavailable: { type: Number, default: 0 }
-  },
-  usdc: {
-    available: { type: Number, default: 0 },
-    unavailable: { type: Number, default: 0 }
-  },
-  usdt: {
-    available: { type: Number, default: 0 },
-    unavailable: { type: Number, default: 0 }
-  }
+  bitcoin: { type: Number, default: 0 },
+  ethereum: { type: Number, default: 0 },
+  usdc: { type: Number, default: 0 },
+  usdt: { type: Number, default: 0 }
 },
 
 
