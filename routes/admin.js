@@ -360,6 +360,23 @@ router.get('/user-lookup', async (req, res) => {
   }
 });
 
+// routes/user.js or wherever your GET /api/user is
+router.get("/", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
 
+    res.json({
+      username: user.username,
+      email: user.email,
+      coins: user.coins,
+      isWithdrawLocked: user.isWithdrawLocked,
+      availableCoins: user.availableCoins, // ✅ <-- ADD THIS
+    });
+  } catch (err) {
+    console.error("Get user error:", err);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
 
 module.exports = router;
