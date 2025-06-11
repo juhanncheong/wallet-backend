@@ -5,6 +5,8 @@ module.exports = async (req, res) => {
   const { id } = req.params;
   let { coin, amount, type } = req.body;
 
+  coin = coin.toLowerCase();  // <--- fix here
+
   if (!coin || !amount || !type) {
     return res.status(400).json({ message: "Missing coin, amount, or type" });
   }
@@ -26,11 +28,9 @@ module.exports = async (req, res) => {
 
     if (updatedAmount < 0) return res.status(400).json({ message: "Insufficient balance" });
 
-    // 🔥 Ensure float is saved
     user.coins[coin] = parseFloat(updatedAmount.toFixed(8));
     await user.save();
 
-    // ✅ Save transaction
     await Transaction.create({
       userId: id,
       type: type === "remove" ? "withdrawal" : "deposit",
