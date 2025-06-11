@@ -5,13 +5,16 @@ module.exports = async (req, res) => {
   const { id } = req.params;
   let { coin, amount, type } = req.body;
 
-  coin = coin.toLowerCase();  // <--- fix here
+  // Normalize coin
+  coin = coin.toLowerCase();
 
-  if (!coin || !amount || !type) {
-    return res.status(400).json({ message: "Missing coin, amount, or type" });
+  // Validate coin type
+  const validCoins = ["bitcoin", "ethereum", "usdc", "usdt"];
+  if (!validCoins.includes(coin)) {
+    return res.status(400).json({ message: "Invalid coin type" });
   }
 
-  // Force float number
+  // Validate amount
   amount = parseFloat(amount);
   if (isNaN(amount) || amount <= 0) {
     return res.status(400).json({ message: "Invalid amount" });
@@ -21,9 +24,11 @@ module.exports = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // Ensure user.coins exists
     if (!user.coins) user.coins = {};
+    if (!user.coins[coin]) user.coins[coin] = 0;
 
-    const current = parseFloat(user.coins[coin] || 0);
+    const current = parseFloat(user.coins[coin]);
     const updatedAmount = type === "remove" ? current - amount : current + amount;
 
     if (updatedAmount < 0) return res.status(400).json({ message: "Insufficient balance" });
