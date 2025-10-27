@@ -181,25 +181,40 @@ exports.toggleFreezeWithdrawal = async (req, res) => {
 exports.updateWalletAddress = async (req, res) => {
   const { id } = req.params;
   const { coin, address } = req.body;
-  const validCoins = ['bitcoin', 'ethereum', 'usdc', 'usdt'];
 
-  if (!validCoins.includes(coin)) {
-    return res.status(400).json({ message: 'Invalid coin type' });
+  // 🧠 Normalize coin names
+  const coinMap = {
+    btc: "bitcoin",
+    eth: "ethereum",
+    usdc: "usdc",
+    usdt: "usdt",
+    bitcoin: "bitcoin",
+    ethereum: "ethereum",
+  };
+
+  const normalizedCoin = coinMap[coin];
+  if (!normalizedCoin) {
+    return res.status(400).json({ message: "Invalid coin type" });
   }
 
   try {
     const user = await User.findById(id);
-    if (!user) return res.status(404).json({ message: 'User not found' });
+    if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.wallets[coin] = address;
+    user.wallets[normalizedCoin] = address;
     await user.save();
 
-    res.json({ success: true, message: `${coin.toUpperCase()} address updated.` });
+    res.json({
+      success: true,
+      message: `${normalizedCoin.toUpperCase()} address updated successfully`,
+      wallets: user.wallets,
+    });
   } catch (err) {
     console.error("Update wallet error:", err);
     res.status(500).json({ message: "Failed to update wallet address" });
   }
 };
+
 
 // ✅ Admin manually creates a referral code (used for signup)
 const ReferralCode = require("../models/ReferralCode");
