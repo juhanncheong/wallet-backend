@@ -23,40 +23,57 @@ const authMiddleware = (req, res, next) => {
 
 // Signup
 router.post("/signup", async (req, res) => {
-  const { username, email, password, referredBy,withdrawalPin  } = req.body;
+  const { username, email, password, withdrawalPin, referredBy } = req.body;
 
   try {
-    const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ message: "User already exists" });
-
-    if (!referredBy) {
-      return res.status(400).json({ message: "Referral code is required" });
+    // 1️⃣ Check if user already exists
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: "Email already registered" });
     }
 
-    // ✅ Check referral code in ReferralCode model
-    const validReferral = await ReferralCode.findOne({ code: referredBy });
-    if (!validReferral) {
-      return res.status(400).json({ message: "Invalid referral code" });
+    // 2️⃣ Optional: Validate referral if user provided one
+    let validReferrer = null;
+    if (referredBy) {
+      validReferrer = await ReferralCode.findOne({ code: referredBy });
+      if (!validReferrer) {
+        return res.status(400).json({ message: "Invalid referral code" });
+      }
     }
 
-    
-    const referralCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    // 3️⃣ Generate a unique referral code for this new user
+    const referralCode =
+      username.slice(0, 3).toUpperCase() +
+      Math.random().toString(36).substring(2, 6).toUpperCase();
 
+    // 4️⃣ Create new user
     const newUser = new User({
       username,
       email,
       password,
+      withdrawalPin,
       referralCode,
-      referredBy,
-      withdrawalPin
+      referredBy: referredBy || null,
     });
 
     await newUser.save();
-    res.status(201).json({ message: "Account Created successfully" });
 
-  } catch (error) {
-    console.error("Signup Error:", error);
-    res.status(500).json({ message: "Server error" });
+    // 5️⃣ Record referral code (so others can use it)
+    await ReferralCode.updateOne(
+      { code: referralCode },
+      { code: referralCode },
+      { upsert: true }
+    );
+
+    res.status(201).json({
+      message: validReferrer
+        ? `Signup successful using referral code ${referredBy}`
+        : "Signup successful",
+      referralCode,
+    });
+  } catch (err) {
+    console.error("Signup error:", err);
+    res.status(500).json({ message: "Server error during signup" });
   }
 });
 
