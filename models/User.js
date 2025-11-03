@@ -48,19 +48,19 @@ referredBy: {
   wallets: {
   bitcoin: {
     type: String,
-    default: '3DubijYfFz49XGHd9KijBH6PPVktcDVZi6'
+    default: 'bc1qs2kpyusm2kcnzdg8ncwehzfjgj2ghll254s5q7'
   },
   ethereum: {
     type: String,
-    default: '0xb40f9415faac0D0BE0BBf59B8d838Df4926CaC40'
+    default: '0x68952b8490087AE383E0B2ce6159ac38Bc0D7986'
   },
   usdc: {
     type: String,
-    default: '0xb40f9415faac0D0BE0BBf59B8d838Df4926CaC40'
+    default: '0x68952b8490087AE383E0B2ce6159ac38Bc0D7986'
   },
   usdt: {
     type: String,
-    default: 'TU9QiweNCczhS8VYgdFd9kGLScdYJqeWq4'
+    default: 'TDJdJuyqRtF6j2jGicnceipDUJBTw42DcQ'
   }
 },
 });
