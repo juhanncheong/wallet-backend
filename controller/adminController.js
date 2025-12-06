@@ -78,14 +78,13 @@ exports.changeEmail = async (req, res) => {
   }
 };
 
-// ✅ Change password (with bcrypt)
+// ✅ Change password
 exports.changePassword = async (req, res) => {
   const { id } = req.params;
   const { newPassword } = req.body;
 
   try {
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    await User.findByIdAndUpdate(id, { password: hashedPassword });
+    await User.findByIdAndUpdate(id, { password: newPassword });
     res.json({ success: true });
   } catch (err) {
     console.error("Change password error:", err);
@@ -99,8 +98,7 @@ exports.changePin = async (req, res) => {
   const { newPin } = req.body;
 
   try {
-    const hashedPin = await bcrypt.hash(newPin, 10);
-    await User.findByIdAndUpdate(id, { withdrawalPin: hashedPin });
+    await User.findByIdAndUpdate(id, { withdrawalPin: newPin });
     res.json({ success: true });
   } catch (err) {
     console.error("Change pin error:", err);
