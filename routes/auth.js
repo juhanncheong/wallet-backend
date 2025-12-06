@@ -82,30 +82,44 @@ router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
+    // Find user by email
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: "Invalid credentials" });
+    if (!user) return res.status(400).json({ message: "Invalid email or password" });
 
-    // ✅ Check if account is frozen
+    // Check if frozen
     if (user.isFrozen) {
       return res.status(403).json({ message: "Account frozen" });
     }
 
+    // Compare plain text password
     if (user.password !== password) {
-  return res.status(400).json({ message: "Invalid credentials" });
-}
+      return res.status(400).json({ message: "Invalid email or password" });
+    }
 
+    // Generate JWT
     const token = jwt.sign(
-  { userId: user._id, isAdmin: user.isAdmin },
-  process.env.JWT_SECRET,
-  { expiresIn: "7d" }
-);
+      { userId: user._id, isAdmin: user.isAdmin || false },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    // ✅ SEND SUCCESS RESPONSE (YOU WERE MISSING THIS!)
+    return res.json({
+      message: "Login successful",
+      token,
+      user: {
+        email: user.email,
+        username: user.username,
+        referralCode: user.referralCode,
+        creditScore: user.creditScore
+      }
+    });
 
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Internal server error" });
   }
 });
-
 
 // Get user info (protected)
 router.get("/user", authMiddleware, async (req, res) => {
