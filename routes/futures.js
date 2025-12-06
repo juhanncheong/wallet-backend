@@ -5,6 +5,20 @@ const auth = require("../middleware/auth");
 const User = require("../models/User");
 const FuturesPosition = require("../models/FuturesPosition");
 
+// Allowed trading pairs – must match your frontend PAIRS list
+const ALLOWED_SYMBOLS = [
+  "BTCUSDT",
+  "ETHUSDT",
+  "SOLUSDT",
+  "XRPUSDT",
+  "DOGEUSDT",
+  "ADAUSDT",
+  "AVAXUSDT",
+  "TONUSDT",
+  "LTCUSDT",
+  "DOTUSDT",
+];
+
 // ----- helpers -----
 function calcLiqPrice(entryPrice, leverage, side) {
   entryPrice = Number(entryPrice);
@@ -37,18 +51,27 @@ function computePnl(side, entry, mark, size, margin) {
 // ========================
 //   POST /api/futures/open
 // ========================
-// body: { side, size, leverage, entryPrice, tp?, sl?, reduceOnly? }
+// body: { symbol, side, size, leverage, entryPrice, tp?, sl?, reduceOnly? }
 router.post("/open", auth, async (req, res) => {
   try {
-    const { side, size, leverage, entryPrice, tp, sl, reduceOnly } = req.body;
+    let { symbol, side, size, leverage, entryPrice, tp, sl, reduceOnly } =
+      req.body;
 
     const _side = side === "short" ? "short" : "long";
     const notional = Number(size);
     const lev = Number(leverage);
     const entry = Number(entryPrice);
 
+    // symbol normalisation + validation
+    symbol = typeof symbol === "string" ? symbol.toUpperCase() : "BTCUSDT";
+    if (!ALLOWED_SYMBOLS.includes(symbol)) {
+      return res.status(400).json({ message: "Unsupported trading pair" });
+    }
+
     if (!notional || !lev || !entry) {
-      return res.status(400).json({ message: "Invalid size/leverage/price" });
+      return res
+        .status(400)
+        .json({ message: "Invalid size/leverage/price" });
     }
 
     const margin = notional / lev;
@@ -74,7 +97,7 @@ router.post("/open", auth, async (req, res) => {
 
     const position = await FuturesPosition.create({
       userId: user._id,
-      symbol: "BTCUSDT",
+      symbol, // <-- real pair from frontend
       side: _side,
       size: notional,
       leverage: lev,
