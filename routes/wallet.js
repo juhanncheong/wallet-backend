@@ -158,16 +158,17 @@ router.post("/swap", auth, async (req, res) => {
   }
 });
 
-// GET USDT Balance
+// GET /api/wallet/usdt
 router.get("/usdt", auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
+    const user = await User.findById(req.user.userId);  // <- correct ID field
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const usdtBalance = user.wallet?.usdt?.balance || 0;
+    // Your real USDT balance
+    const usdtBalance = user.coins?.usdt || 0;
 
     res.json({ balance: usdtBalance });
   } catch (err) {
