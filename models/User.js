@@ -20,7 +20,7 @@ const userSchema = new mongoose.Schema({
 
   creditScore: {
     type: Number,
-    default: 0, // start everyone at 0
+    default: 100,
     min: 0,
     max: 100,
   },
