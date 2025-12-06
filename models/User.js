@@ -18,6 +18,10 @@ const userSchema = new mongoose.Schema({
     usdt: { type: Number, default: 0 },
   },
 
+  futuresBalance: {
+    usdt: { type: Number, default: 0 },
+  },
+  
   creditScore: {
     type: Number,
     default: 100,

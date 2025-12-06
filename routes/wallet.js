@@ -158,4 +158,22 @@ router.post("/swap", auth, async (req, res) => {
   }
 });
 
+// GET USDT Balance
+router.get("/usdt", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const usdtBalance = user.wallet?.usdt?.balance || 0;
+
+    res.json({ balance: usdtBalance });
+  } catch (err) {
+    console.error("USDT balance error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;

@@ -28,6 +28,7 @@ app.use("/api/wallet", walletRoutes);
 app.use("/admin", withdrawalRoutes);
 app.use("/api/admin", require("./routes/admin"));
 app.use("/api/admin", adminRoutes);
+app.use("/api/user", require("./routes/wallet"));
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
