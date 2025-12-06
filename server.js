@@ -15,6 +15,7 @@ app.use(cors({
 }));
 const withdrawalRoutes = require("./routes/withdrawals");
 const adminRoutes = require("./routes/admin");
+const futuresRoutes = require("./routes/futures");
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.use("/admin", withdrawalRoutes);
 app.use("/api/admin", require("./routes/admin"));
 app.use("/api/admin", adminRoutes);
 app.use("/api/user", require("./routes/wallet"));
+app.use("/api/futures", futuresRoutes);
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {
