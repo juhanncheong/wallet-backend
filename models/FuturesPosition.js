@@ -18,7 +18,7 @@ const futuresPositionSchema = new mongoose.Schema({
     required: true,
   },
 
-  // Notional position size in USDT (e.g. 10 000 USDT)
+  // Notional size in USDT (e.g. 10 000 USDT)
   size: {
     type: Number,
     required: true,
@@ -29,7 +29,7 @@ const futuresPositionSchema = new mongoose.Schema({
     required: true,
   },
 
-  // Margin actually locked for this position (size / leverage)
+  // Margin locked = size / leverage
   margin: {
     type: Number,
     required: true,
@@ -43,6 +43,21 @@ const futuresPositionSchema = new mongoose.Schema({
   liqPrice: {
     type: Number,
     required: true,
+  },
+
+  // Optional Take Profit & Stop Loss
+  tp: {
+    type: Number,
+  },
+
+  sl: {
+    type: Number,
+  },
+
+  // If true – don’t allow adding more size (only reducing/closing)
+  reduceOnly: {
+    type: Boolean,
+    default: false,
   },
 
   status: {

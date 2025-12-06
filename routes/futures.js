@@ -5,11 +5,10 @@ const auth = require("../middleware/auth");
 const User = require("../models/User");
 const FuturesPosition = require("../models/FuturesPosition");
 
-// Helper: liquidation price
+// ----- helpers -----
 function calcLiqPrice(entryPrice, leverage, side) {
   entryPrice = Number(entryPrice);
   leverage = Number(leverage);
-
   if (!entryPrice || !leverage) return entryPrice;
 
   if (side === "long") {
@@ -19,34 +18,47 @@ function calcLiqPrice(entryPrice, leverage, side) {
   }
 }
 
-/**
- * POST /api/futures/open
- * Body: { side: "long"|"short", size, leverage, entryPrice }
- * - Validates margin against user's USDT balance
- * - Deducts margin from user.coins.usdt
- * - Creates FuturesPosition document
- */
+function computePnl(side, entry, mark, size, margin) {
+  entry = Number(entry);
+  mark = Number(mark);
+  size = Number(size);
+  margin = Number(margin);
+
+  let pnlUsd;
+  if (side === "long") {
+    pnlUsd = size * (mark / entry - 1);
+  } else {
+    pnlUsd = size * (1 - mark / entry);
+  }
+  const pnlPct = margin ? (pnlUsd / margin) * 100 : 0;
+  return { pnlUsd, pnlPct };
+}
+
+// ========================
+//   POST /api/futures/open
+// ========================
+// body: { side, size, leverage, entryPrice, tp?, sl?, reduceOnly? }
 router.post("/open", auth, async (req, res) => {
   try {
-    const { side, size, leverage, entryPrice } = req.body;
+    const { side, size, leverage, entryPrice, tp, sl, reduceOnly } = req.body;
 
     const _side = side === "short" ? "short" : "long";
-    const _size = Number(size);
-    const _lev = Number(leverage);
-    const _entry = Number(entryPrice);
+    const notional = Number(size);
+    const lev = Number(leverage);
+    const entry = Number(entryPrice);
 
-    if (!_size || !_lev || !_entry) {
-      return res.status(400).json({ message: "Invalid size / leverage / price" });
+    if (!notional || !lev || !entry) {
+      return res.status(400).json({ message: "Invalid size/leverage/price" });
     }
 
-    const margin = _size / _lev;
+    const margin = notional / lev;
 
-    const user = await User.findById(req.user.userId); // from auth.js
+    const user = await User.findById(req.user.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     const usdtBalance = user.coins?.usdt || 0;
 
-    // 🔥 HARD BACKEND CHECK
+    // HARD backend margin check
     if (margin > usdtBalance) {
       return res.status(400).json({
         message: "Insufficient USDT balance",
@@ -55,20 +67,23 @@ router.post("/open", auth, async (req, res) => {
       });
     }
 
-    // Deduct margin from balance (simple spot-as-margin for now)
+    // Deduct margin from USDT wallet
     user.coins.usdt = usdtBalance - margin;
 
-    const liqPrice = calcLiqPrice(_entry, _lev, _side);
+    const liqPrice = calcLiqPrice(entry, lev, _side);
 
     const position = await FuturesPosition.create({
       userId: user._id,
       symbol: "BTCUSDT",
       side: _side,
-      size: _size,
-      leverage: _lev,
+      size: notional,
+      leverage: lev,
       margin,
-      entryPrice: _entry,
+      entryPrice: entry,
       liqPrice,
+      tp: tp || undefined,
+      sl: sl || undefined,
+      reduceOnly: !!reduceOnly,
     });
 
     await user.save();
@@ -84,10 +99,9 @@ router.post("/open", auth, async (req, res) => {
   }
 });
 
-/**
- * GET /api/futures/open
- * - Returns all OPEN positions for logged-in user
- */
+// =========================
+//   GET /api/futures/open
+// =========================
 router.get("/open", auth, async (req, res) => {
   try {
     const positions = await FuturesPosition.find({
@@ -98,6 +112,81 @@ router.get("/open", auth, async (req, res) => {
     res.json(positions);
   } catch (err) {
     console.error("Get futures open error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ======================================
+//   POST /api/futures/close
+//   body: { positionId, percent, markPrice }
+// ======================================
+router.post("/close", auth, async (req, res) => {
+  try {
+    const { positionId, percent, markPrice } = req.body;
+    const pct = Number(percent);
+    const mark = Number(markPrice);
+
+    if (!positionId || !pct || pct <= 0 || pct > 100 || !mark) {
+      return res.status(400).json({ message: "Invalid close request" });
+    }
+
+    const pos = await FuturesPosition.findOne({
+      _id: positionId,
+      userId: req.user.userId,
+      status: "open",
+    });
+
+    if (!pos) {
+      return res.status(404).json({ message: "Position not found" });
+    }
+
+    const user = await User.findById(req.user.userId);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    // portion to close
+    const portion = pct / 100;
+    const closeSize = pos.size * portion;
+    const closeMargin = pos.margin * portion;
+
+    const { pnlUsd, pnlPct } = computePnl(
+      pos.side,
+      pos.entryPrice,
+      mark,
+      closeSize,
+      closeMargin
+    );
+
+    // credit back margin + PnL for the closed part
+    user.coins.usdt = (user.coins.usdt || 0) + closeMargin + pnlUsd;
+
+    if (pct === 100) {
+      // full close
+      pos.status = "closed";
+      pos.closePrice = mark;
+      pos.closedAt = new Date();
+      pos.pnlUsd = pnlUsd;
+      pos.pnlPct = pnlPct;
+      pos.size = 0;
+      pos.margin = 0;
+    } else {
+      // partial close - shrink position
+      pos.size = pos.size - closeSize;
+      pos.margin = pos.margin - closeMargin;
+      // we keep entryPrice and liqPrice as they are (simplified)
+    }
+
+    await pos.save();
+    await user.save();
+
+    res.json({
+      message: pct === 100 ? "Position closed" : "Position partially closed",
+      position: pos,
+      newBalance: user.coins.usdt,
+      realizedPnl: pnlUsd,
+      realizedPnlPct: pnlPct,
+    });
+  } catch (err) {
+    console.error("Close futures error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
