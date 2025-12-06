@@ -6,6 +6,7 @@ const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
 const Coin = require('../models/Coin');
 const isAdmin = require("../middleware/isAdmin");
+const verifyAdmin = require("../middleware/verifyAdmin");
 
 const {
   getAllUsers,
@@ -381,7 +382,7 @@ router.get("/", auth, async (req, res) => {
 });
 
 // UPDATE CREDIT SCORE
-router.put("/users/:id/credit-score", auth, isAdmin, async (req, res) => {
+router.put("/users/:id/credit-score", verifyAdmin, async (req, res) => {
   try {
     let { creditScore } = req.body;
 
