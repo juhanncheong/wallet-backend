@@ -14,6 +14,7 @@ app.use(cors({
   origin: '*', // ⚠️ You can restrict this later to only your frontend URL
 }));
 const withdrawalRoutes = require("./routes/withdrawals");
+const adminRoutes = require("./routes/admin");
 
 dotenv.config();
 
@@ -26,6 +27,7 @@ app.use("/api/wallet", require("./routes/wallet"));
 app.use("/api/wallet", walletRoutes);
 app.use("/admin", withdrawalRoutes);
 app.use("/api/admin", require("./routes/admin"));
+app.use("/api/admin", adminRoutes);
 
 // MongoDB connection
 mongoose.connect(process.env.MONGO_URI, {

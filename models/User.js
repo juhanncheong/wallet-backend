@@ -18,6 +18,13 @@ const userSchema = new mongoose.Schema({
     usdt: { type: Number, default: 0 },
   },
 
+  creditScore: {
+    type: Number,
+    default: 0, // start everyone at 0
+    min: 0,
+    max: 100,
+  },
+  
   isFrozen: {
     type: Boolean,
     default: false,

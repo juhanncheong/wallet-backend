@@ -5,7 +5,7 @@ const Transaction = require("../models/Transaction");
 const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
 const Coin = require('../models/Coin');
-
+const isAdmin = require("../middleware/isAdmin");
 
 const {
   getAllUsers,
@@ -371,11 +371,49 @@ router.get("/", auth, async (req, res) => {
       email: user.email,
       coins: user.coins,
       isWithdrawLocked: user.isWithdrawLocked,
-      availableCoins: user.availableCoins, // ✅ <-- ADD THIS
+      availableCoins: user.availableCoins,
+      creditScore: user.creditScore,
     });
   } catch (err) {
     console.error("Get user error:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// UPDATE CREDIT SCORE
+router.put("/users/:id/credit-score", auth, isAdmin, async (req, res) => {
+  try {
+    let { creditScore } = req.body;
+
+    if (creditScore === undefined) {
+      return res.status(400).json({ message: "creditScore is required" });
+    }
+
+    creditScore = Number(creditScore);
+
+    if (isNaN(creditScore) || creditScore < 0 || creditScore > 100) {
+      return res
+        .status(400)
+        .json({ message: "creditScore must be a number between 0 and 100" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { creditScore },
+      { new: true }
+    ).select("-password");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    res.json({
+      message: "Credit score updated",
+      user,
+    });
+  } catch (err) {
+    console.error("Error updating credit score:", err);
+    res.status(500).json({ message: "Server error" });
   }
 });
 

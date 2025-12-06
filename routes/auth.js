@@ -94,8 +94,12 @@ router.post("/login", async (req, res) => {
   return res.status(400).json({ message: "Invalid credentials" });
 }
 
-    const token = jwt.sign({ userId: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-    res.json({ token });
+    const token = jwt.sign(
+  { userId: user._id, isAdmin: user.isAdmin },
+  process.env.JWT_SECRET,
+  { expiresIn: "7d" }
+);
+
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -132,6 +136,7 @@ router.get("/user", authMiddleware, async (req, res) => {
   isFrozen: user.isFrozen,
   isWithdrawFrozen: user.isWithdrawFrozen,
   createdAt: user.createdAt,
+  creditScore: user.creditScore,
   availableCoins: user.availableCoins,
 });
   } catch (err) {
