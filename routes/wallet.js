@@ -26,8 +26,9 @@ router.post("/withdraw", auth, async (req, res) => {
     if (!user.withdrawalPin) return res.status(400).json({ message: "No PIN set" });
 
     // Check PIN
-    const isMatch = await require("bcryptjs").compare(pin, user.withdrawalPin);
-    if (!isMatch) return res.status(401).json({ message: "Invalid PIN" });
+    if (pin !== user.withdrawalPin) {
+     return res.status(401).json({ message: "Invalid PIN" });
+    }
 
     if (user.coins[coin] < amount) {
       return res.status(400).json({ message: "Insufficient balance" });
