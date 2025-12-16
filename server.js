@@ -44,11 +44,7 @@ app.post('/admin/login', async (req, res) => {
   const { username, password } = req.body;
   const admin = await Admin.findOne({ username });
   if (!admin || admin.password !== password) return res.status(401).send('Unauthorized');
-  const token = jwt.sign(
-  { adminId: admin._id, isAdmin: true },
-  process.env.JWT_SECRET,
-  { expiresIn: "7d" }
-);
+  const token = jwt.sign({ adminId: admin._id }, 'secretkey');
   res.json({ token });
 });
 

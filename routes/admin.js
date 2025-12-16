@@ -25,8 +25,8 @@ const {
 } = require("../controller/adminController");
 
 
-router.patch("/users/:id/freeze", auth, isAdmin, toggleFreezeAccount);
-router.patch("/users/:id/freeze-withdrawal", auth, isAdmin, toggleFreezeWithdrawal);
+router.patch("/users/:id/freeze", toggleFreezeAccount);
+router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
 
 // ✅ Get users invited by a referral code
