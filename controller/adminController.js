@@ -106,21 +106,67 @@ exports.changePin = async (req, res) => {
   }
 };
 
-// ✅ Freeze / Unfreeze login access
-exports.toggleFreezeAccount = async (req, res) => {
-  const { id } = req.params;
+// ✅ Freeze user account
+exports.freezeUserAccount = async (req, res) => {
+  const { userId, reason } = req.body;
 
   try {
-    const user = await User.findById(id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
 
-    user.isFrozen = !user.isFrozen;
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.isFrozen = true;
+    user.freezeReason = reason || "Account frozen by admin";
+    user.frozenAt = new Date();
+
     await user.save();
 
-    res.json({ success: true, isFrozen: user.isFrozen });
+    res.status(200).json({
+      success: true,
+      message: "User account frozen successfully",
+      userId: user._id,
+    });
+
   } catch (err) {
-    console.error("Toggle freeze account error:", err);
-    res.status(500).json({ message: "Failed to toggle freeze" });
+    console.error("Freeze user error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ✅ Unfreeze user account
+exports.unfreezeUserAccount = async (req, res) => {
+  const { userId } = req.body;
+
+  try {
+    if (!userId) {
+      return res.status(400).json({ message: "User ID is required" });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.isFrozen = false;
+    user.freezeReason = "";
+    user.frozenAt = null;
+
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: "User account unfrozen successfully",
+      userId: user._id,
+    });
+
+  } catch (err) {
+    console.error("Unfreeze user error:", err);
+    res.status(500).json({ message: "Server error" });
   }
 };
 

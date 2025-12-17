@@ -15,17 +15,16 @@ const {
   changeEmail,
   changePassword,
   changePin,
-  toggleFreezeAccount,
   toggleFreezeWithdrawal,
   updateWalletAddress,
   generateReferralCode, 
   lookupReferralCode,
   toggleWithdrawLock,
-  getReferredUsers
+  getReferredUsers,
+  freezeUserAccount,
+  unfreezeUserAccount
 } = require("../controller/adminController");
 
-
-router.patch("/users/:id/freeze", toggleFreezeAccount);
 router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
 
@@ -48,11 +47,12 @@ router.put("/users/:id/password", changePassword);
 // ✅ Change withdrawal pin
 router.put("/users/:id/pin", changePin);
 
-// ✅ Freeze/unfreeze account
-router.put("/users/:id/freeze-account", toggleFreezeAccount);
-
 // ✅ Freeze/unfreeze withdrawal
 router.put("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
+
+// ✅ Freeze/unfreeze account
+router.post("/users/:id/freeze", verifyAdmin, freezeUserAccount);
+router.post("/users/:id/unfreeze", verifyAdmin, unfreezeUserAccount);
 
 // ✅ Update user coin balance (e.g. BTC, ETH, USDC, USDT)
 router.patch("/users/:id/coins", require("../controller/adminUpdateCoin"));
