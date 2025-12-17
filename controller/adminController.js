@@ -108,7 +108,7 @@ exports.changePin = async (req, res) => {
 
 // ✅ Freeze user account
 exports.freezeUserAccount = async (req, res) => {
-  const { userId, reason } = req.body;
+  const userId = req.params.id; // ✅ FROM URL
 
   try {
     if (!userId) {
@@ -121,26 +121,24 @@ exports.freezeUserAccount = async (req, res) => {
     }
 
     user.isFrozen = true;
-    user.freezeReason = reason || "Account frozen by admin";
+    user.freezeReason = "Account frozen by admin";
     user.frozenAt = new Date();
 
     await user.save();
 
-    res.status(200).json({
+    res.json({
       success: true,
-      message: "User account frozen successfully",
-      userId: user._id,
+      message: "User account frozen",
     });
-
   } catch (err) {
-    console.error("Freeze user error:", err);
+    console.error("Freeze error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
 // ✅ Unfreeze user account
 exports.unfreezeUserAccount = async (req, res) => {
-  const { userId } = req.body;
+  const userId = req.params.id; // ✅ FROM URL
 
   try {
     if (!userId) {
@@ -158,14 +156,12 @@ exports.unfreezeUserAccount = async (req, res) => {
 
     await user.save();
 
-    res.status(200).json({
+    res.json({
       success: true,
-      message: "User account unfrozen successfully",
-      userId: user._id,
+      message: "User account unfrozen",
     });
-
   } catch (err) {
-    console.error("Unfreeze user error:", err);
+    console.error("Unfreeze error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
