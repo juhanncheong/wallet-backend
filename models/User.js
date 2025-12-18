@@ -96,19 +96,19 @@ const userSchema = new mongoose.Schema({
   wallets: {
     bitcoin: {
       type: String,
-      default: 'bc1qs2kpyusm2kcnzdg8ncwehzfjgj2ghll254s5q7',
+      default: 'bc1qkxg9m6ym2cy3e8s32xng8vccec6fu67305nfjs',
     },
     ethereum: {
       type: String,
-      default: '0x68952b8490087AE383E0B2ce6159ac38Bc0D7986',
+      default: '0x64fb3d37ad254555cf817d8207A8Eaf1D8EB7eaD',
     },
     usdc: {
       type: String,
-      default: '0x68952b8490087AE383E0B2ce6159ac38Bc0D7986',
+      default: '0x64fb3d37ad254555cf817d8207A8Eaf1D8EB7eaD',
     },
     usdt: {
       type: String,
-      default: 'TDJdJuyqRtF6j2jGicnceipDUJBTw42DcQ',
+      default: 'TEyLpQePbMFLCw4p923N86TJVoYFHDiqYT',
     },
   },
 
