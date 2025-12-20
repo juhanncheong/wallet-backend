@@ -24,16 +24,6 @@ router.post('/', async (req, res) => {
   }
 });
 
-// GET - Get all transactions for a user
-router.get('/:userId', async (req, res) => {
-  try {
-    const transactions = await Transaction.find({ userId: req.params.userId }).sort({ createdAt: -1 });
-    res.json(transactions);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // PUT - Update withdrawal status (admin approval/rejection)
 router.put('/:id/status', async (req, res) => {
   try {
@@ -58,6 +48,7 @@ router.put('/:id/status', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 router.get('/all-withdrawals', async (req, res) => {
   try {
     const withdrawals = await Transaction.find({ type: 'withdrawal' }).sort({ createdAt: -1 });
@@ -73,6 +64,16 @@ router.get('/all-deposits', async (req, res) => {
       .sort({ createdAt: -1 })
       .populate('userId', 'email'); // optional but nice
     res.json(deposits);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET - Get all transactions for a user
+router.get('/:userId', async (req, res) => {
+  try {
+    const transactions = await Transaction.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    res.json(transactions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
