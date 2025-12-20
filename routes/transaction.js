@@ -67,4 +67,15 @@ router.get('/all-withdrawals', async (req, res) => {
   }
 });
 
+router.get('/all-deposits', async (req, res) => {
+  try {
+    const deposits = await Transaction.find({ type: 'deposit' })
+      .sort({ createdAt: -1 })
+      .populate('userId', 'email'); // optional but nice
+    res.json(deposits);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
