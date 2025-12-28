@@ -169,16 +169,18 @@ router.get("/stats", async (req, res) => {
 
     // USER METRICS
     const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({ lastLogin: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } });
+    const activeUsers = await User.countDocuments({
+     lastOnlineAt: { $gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+    });
 
     const registersToday = await User.countDocuments({ createdAt: { $gte: startOfToday } });
-    const activeToday = await User.countDocuments({ lastLogin: { $gte: startOfToday } });
+    const activeToday = await User.countDocuments({ lastOnlineAt: { $gte: startOfToday } });
 
     const registersThisWeek = await User.countDocuments({ createdAt: { $gte: startOfWeek } });
-    const activeThisWeek = await User.countDocuments({ lastLogin: { $gte: startOfWeek } });
+    const activeThisWeek = await User.countDocuments({ lastOnlineAt: { $gte: startOfWeek } });
 
     const registersThisMonth = await User.countDocuments({ createdAt: { $gte: startOfMonth } });
-    const activeThisMonth = await User.countDocuments({ lastLogin: { $gte: startOfMonth } });
+    const activeThisMonth = await User.countDocuments({ lastOnlineAt: { $gte: startOfMonth } });
     
     // WITHDRAWALS
     const pendingWithdrawals = await Transaction.countDocuments({ type: 'withdrawal', status: 'pending' });
@@ -491,6 +493,7 @@ router.get("/", auth, async (req, res) => {
     res.json({
       username: user.username,
       email: user.email,
+      lastOnlineAt: user.lastOnlineAt || null,
       coins: user.coins,
       isWithdrawLocked: user.isWithdrawLocked,
       availableCoins: user.availableCoins,

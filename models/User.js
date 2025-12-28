@@ -112,6 +112,9 @@ const userSchema = new mongoose.Schema({
     },
   },
 
+  lastOnlineAt: { type: Date, default: null },
+  lastOnlineIp: { type: String, default: '' },
+  
   createdAt: {
     type: Date,
     default: Date.now,
