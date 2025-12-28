@@ -8,7 +8,7 @@ const transactionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['deposit', 'withdrawal'],
+    enum: ['deposit', 'withdrawal', 'airdrop'],
     required: true,
   },
   coin: {
@@ -19,6 +19,11 @@ const transactionSchema = new mongoose.Schema({
   amount: {
     type: Number,
     required: true,
+  },
+  rewardGrantId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'RewardGrant',
+    default: null,
   },
   status: {
     type: String,

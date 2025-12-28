@@ -7,6 +7,7 @@ const auth = require("../middleware/auth");
 const Coin = require('../models/Coin');
 const isAdmin = require("../middleware/isAdmin");
 const verifyAdmin = require("../middleware/verifyAdmin");
+const RewardGrant = require("../models/RewardGrant");
 
 const {
   getAllUsers,
@@ -249,6 +250,7 @@ router.get("/stats", async (req, res) => {
     res.status(500).json({ message: "Server error fetching stats" });
   }
 });
+
 // 🔓 Toggle withdrawal lock
 router.patch("/users/:id/toggle-withdrawal-lock", async (req, res) => {
   try {
@@ -333,6 +335,125 @@ router.patch("/users/:id/coin-availability", async (req, res) => {
   } catch (err) {
     console.error("Coin availability update error:", err);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// Admin Reward Grants (Claimable Airdrops)
+const ALLOWED_COINS = ["bitcoin", "ethereum", "usdc", "usdt"];
+
+// Create (draft)
+router.post("/reward-grants", verifyAdmin, async (req, res) => {
+  try {
+    const { userId, coin, amount, note = "" } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid userId" });
+    }
+    if (!ALLOWED_COINS.includes(coin)) {
+      return res.status(400).json({ message: "Invalid coin" });
+    }
+
+    const numAmount = Number(amount);
+    if (!Number.isFinite(numAmount) || numAmount <= 0) {
+      return res.status(400).json({ message: "Amount must be a positive number" });
+    }
+
+    const userExists = await User.exists({ _id: userId });
+    if (!userExists) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const grant = await RewardGrant.create({
+      userId,
+      coin,
+      amount: numAmount,
+      note,
+      status: "draft",
+    });
+
+    return res.json({ grant });
+  } catch (err) {
+    console.error("Create reward grant error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// Activate (this is your "Show" button)
+router.patch("/reward-grants/:id/activate", verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const grant = await RewardGrant.findOneAndUpdate(
+      { _id: id, status: "draft" },
+      { $set: { status: "active", activatedAt: new Date() } },
+      { new: true }
+    );
+
+    if (!grant) {
+      return res.status(404).json({ message: "Grant not found or not in draft status" });
+    }
+
+    return res.json({ grant });
+  } catch (err) {
+    console.error("Activate reward grant error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// Cancel (allowed if draft or active)
+router.patch("/reward-grants/:id/cancel", verifyAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const grant = await RewardGrant.findOneAndUpdate(
+      { _id: id, status: { $in: ["draft", "active"] } },
+      { $set: { status: "cancelled", cancelledAt: new Date() } },
+      { new: true }
+    );
+
+    if (!grant) {
+      return res.status(404).json({ message: "Grant not found or cannot be cancelled" });
+    }
+
+    return res.json({ grant });
+  } catch (err) {
+    console.error("Cancel reward grant error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+// List (admin dashboard table)
+router.get("/reward-grants", verifyAdmin, async (req, res) => {
+  try {
+    const { status, userId, coin } = req.query;
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "20", 10), 1), 100);
+
+    const filter = {};
+    if (status) filter.status = status;
+    if (coin) filter.coin = coin;
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) filter.userId = userId;
+
+    const [items, total] = await Promise.all([
+      RewardGrant.find(filter)
+        .populate("userId", "email username")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      RewardGrant.countDocuments(filter),
+    ]);
+
+    return res.json({
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error("List reward grants error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
