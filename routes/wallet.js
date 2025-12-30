@@ -27,10 +27,44 @@ router.post("/withdraw", auth, async (req, res) => {
 
     if (!user.withdrawalPin) return res.status(400).json({ message: "No PIN set" });
 
-    // Check PIN
-    if (pin !== user.withdrawalPin) {
-     return res.status(401).json({ message: "Invalid PIN" });
-    }
+const MAX_PIN_TRIES = 3;
+
+// ✅ PIN-lock check (separate from admin lock)
+if (user.isWithdrawPinLocked) {
+  return res.status(403).json({
+    message: "Withdrawals locked due to 3 wrong PIN attempts. Contact admin to reset.",
+    triesLeft: 0,
+    isWithdrawPinLocked: true,
+  });
+}
+
+// ✅ Check PIN
+if (pin !== user.withdrawalPin) {
+  user.withdrawalPinFailCount = (user.withdrawalPinFailCount || 0) + 1;
+
+  const triesLeft = Math.max(0, MAX_PIN_TRIES - user.withdrawalPinFailCount);
+
+  if (triesLeft === 0) {
+    user.isWithdrawPinLocked = true;
+  }
+
+  await user.save();
+
+  return res.status(401).json({
+    message:
+      triesLeft === 0
+        ? "Too many wrong PIN attempts. Withdrawals are locked until admin resets."
+        : `Invalid PIN. ${triesLeft} tries left.`,
+    triesLeft,
+    isWithdrawPinLocked: user.isWithdrawPinLocked,
+  });
+}
+
+// ✅ Correct PIN: reset fail count
+if ((user.withdrawalPinFailCount || 0) !== 0) {
+  user.withdrawalPinFailCount = 0;
+  await user.save();
+}
 
     if (user.coins[coin] < amount) {
       return res.status(400).json({ message: "Insufficient balance" });

@@ -60,10 +60,9 @@ const userSchema = new mongoose.Schema({
     default: false,
   },
 
-  isWithdrawLocked: {
-    type: Boolean,
-    default: true, // 🔒 locked by default for new users
-  },
+  isWithdrawLocked: { type: Boolean, default: true },
+  withdrawalPinFailCount: { type: Number, default: 0 },
+  isWithdrawPinLocked: { type: Boolean, default: false },
 
   freezeReason: {
     type: String,
@@ -74,6 +73,8 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null,
   },
+
+
 
   /* =========================
      REFERRAL SYSTEM

@@ -271,6 +271,7 @@ router.patch("/users/:id/toggle-withdrawal-lock", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
 router.post('/toggle-coin-send', async (req, res) => {
   const { coin, status } = req.body;
 
@@ -539,6 +540,28 @@ router.put("/users/:id/credit-score", verifyAdmin, async (req, res) => {
   } catch (err) {
     console.error("Error updating credit score:", err);
     res.status(500).json({ message: "Server error" });
+  }
+});
+
+// ✅ Reset withdrawal PIN lock + attempts (does NOT affect admin lock)
+router.patch("/users/:id/reset-withdrawal-pin-lock", verifyAdmin, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    user.isWithdrawPinLocked = false;
+    user.withdrawalPinFailCount = 0;
+
+    await user.save();
+
+    return res.json({
+      message: "Withdrawal PIN lock reset",
+      isWithdrawPinLocked: user.isWithdrawPinLocked,
+      withdrawalPinFailCount: user.withdrawalPinFailCount,
+    });
+  } catch (err) {
+    console.error("Reset withdrawal PIN lock error:", err);
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
