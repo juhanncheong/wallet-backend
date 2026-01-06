@@ -8,6 +8,7 @@ const Coin = require('../models/Coin');
 const isAdmin = require("../middleware/isAdmin");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const RewardGrant = require("../models/RewardGrant");
+const mongoose = require("mongoose");
 
 const {
   getAllUsers,
@@ -23,11 +24,17 @@ const {
   toggleWithdrawLock,
   getReferredUsers,
   freezeUserAccount,
-  unfreezeUserAccount
+  unfreezeUserAccount,
+  addPoolAddress,
+  bulkAddPoolAddresses,
+  listPoolAddresses,
+  disablePoolAddress,
+  enablePoolAddress,
 } = require("../controller/adminController");
 
-router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
+router.get("/users", getAllUsers);
 
+router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
 // ✅ Get users invited by a referral code
 router.get("/referral/invited", getReferredUsers);
@@ -55,6 +62,13 @@ router.put("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 router.post("/users/:id/freeze", verifyAdmin, freezeUserAccount);
 router.post("/users/:id/unfreeze", verifyAdmin, unfreezeUserAccount);
 
+// ✅ Address Pool (deposit wallets)
+router.post("/address-pool", verifyAdmin, addPoolAddress);
+router.post("/address-pool/bulk", verifyAdmin, bulkAddPoolAddresses);
+router.get("/address-pool", verifyAdmin, listPoolAddresses);
+router.patch("/address-pool/:id/disable", verifyAdmin, disablePoolAddress);
+router.patch("/address-pool/:id/enable", verifyAdmin, enablePoolAddress);
+
 // ✅ Update user coin balance (e.g. BTC, ETH, USDC, USDT)
 router.patch("/users/:id/coins", require("../controller/adminUpdateCoin"));
 
@@ -64,8 +78,6 @@ router.put("/users/:id/wallet", updateWalletAddress);
 // ✅ Search user by email or ID
 router.get("/user", async (req, res) => {
   const { email, id } = req.query;
- 
-  router.get("/users", getAllUsers);
 
   try {
     let user;
@@ -459,8 +471,6 @@ router.get("/reward-grants", verifyAdmin, async (req, res) => {
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 });
-
-const mongoose = require("mongoose");
 
 router.get('/user-lookup', async (req, res) => {
   const { query } = req.query;

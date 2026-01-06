@@ -1,6 +1,7 @@
 const User = require('../models/User');
 const Transaction = require('../models/Transaction'); // ADD THIS
 const bcrypt = require("bcryptjs");
+const Wallet = require("../models/Wallet");
 
 // ✅ Update user balance and log transaction
 exports.updateUserBalance = async (req, res) => {
@@ -327,4 +328,202 @@ exports.getAllUsers = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+
 module.exports.toggleWithdrawLock = toggleWithdrawLock;
+
+// --------------------
+// Address Pool (Deposit Wallet Pool)
+// --------------------
+const COIN_MAP = {
+  btc: "bitcoin",
+  eth: "ethereum",
+  usdc: "usdc",
+  usdt: "usdt",
+  bitcoin: "bitcoin",
+  ethereum: "ethereum",
+};
+
+function normalizeCoin(coin) {
+  if (!coin) return null;
+  return COIN_MAP[String(coin).toLowerCase()];
+}
+
+// POST /admin/address-pool  (add 1)
+exports.addPoolAddress = async (req, res) => {
+  try {
+    const { address, coin, network, notes = "" } = req.body;
+
+    const normalizedCoin = normalizeCoin(coin);
+    if (!address || typeof address !== "string" || address.trim().length < 8) {
+      return res.status(400).json({ message: "Invalid address" });
+    }
+    if (!normalizedCoin) {
+      return res.status(400).json({ message: "Invalid coin" });
+    }
+    if (!network || typeof network !== "string") {
+      return res.status(400).json({ message: "Network is required" });
+    }
+
+    const doc = await Wallet.create({
+      address: address.trim(),
+      coin: normalizedCoin,
+      network: network.trim(),
+      notes,
+      status: "available",
+    });
+
+    return res.json({ success: true, wallet: doc });
+  } catch (err) {
+    // duplicate key (unique index on address+coin+network)
+    if (err?.code === 11000) {
+      return res.status(409).json({ message: "Address already exists in pool" });
+    }
+    console.error("addPoolAddress error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// POST /admin/address-pool/bulk  (add many, e.g. 5 addresses)
+exports.bulkAddPoolAddresses = async (req, res) => {
+  try {
+    const { items } = req.body; // [{address, coin, network, notes?}, ...]
+
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: "items[] is required" });
+    }
+
+    const prepared = items.map((it) => {
+      const normalizedCoin = normalizeCoin(it.coin);
+      return {
+        address: String(it.address || "").trim(),
+        coin: normalizedCoin,
+        network: String(it.network || "").trim(),
+        notes: it.notes || "",
+        status: "available",
+      };
+    });
+
+    // validate
+    for (const p of prepared) {
+      if (!p.address || p.address.length < 8) {
+        return res.status(400).json({ message: "Invalid address in items[]" });
+      }
+      if (!p.coin) {
+        return res.status(400).json({ message: "Invalid coin in items[]" });
+      }
+      if (!p.network) {
+        return res.status(400).json({ message: "Network is required in items[]" });
+      }
+    }
+
+    // ordered:false = keep inserting even if some duplicates
+    const inserted = await Wallet.insertMany(prepared, { ordered: false });
+
+    return res.json({
+      success: true,
+      insertedCount: inserted.length,
+      inserted,
+    });
+  } catch (err) {
+    // insertMany duplicates often still throws; we still want a useful response
+    if (err?.writeErrors) {
+      const insertedCount = err.result?.nInserted || 0;
+      return res.status(207).json({
+        success: true,
+        message: "Some addresses could not be inserted (likely duplicates).",
+        insertedCount,
+        errors: err.writeErrors.map((e) => ({
+          index: e.index,
+          code: e.code,
+          message: e.errmsg,
+        })),
+      });
+    }
+
+    console.error("bulkAddPoolAddresses error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// GET /admin/address-pool?coin=btc&network=Ethereum&status=available&page=1&limit=50
+exports.listPoolAddresses = async (req, res) => {
+  try {
+    const { coin, network, status } = req.query;
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
+
+    const filter = {};
+    if (coin) {
+      const normalizedCoin = normalizeCoin(coin);
+      if (!normalizedCoin) return res.status(400).json({ message: "Invalid coin" });
+      filter.coin = normalizedCoin;
+    }
+    if (network) filter.network = String(network).trim();
+    if (status) filter.status = status;
+
+    const [items, total, counts] = await Promise.all([
+      Wallet.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      Wallet.countDocuments(filter),
+      Wallet.aggregate([
+        { $match: filter },
+        { $group: { _id: "$status", count: { $sum: 1 } } },
+      ]),
+    ]);
+
+    return res.json({
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+      counts: counts.reduce((acc, c) => ((acc[c._id] = c.count), acc), {}),
+    });
+  } catch (err) {
+    console.error("listPoolAddresses error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// PATCH /admin/address-pool/:id/disable
+exports.disablePoolAddress = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const updated = await Wallet.findOneAndUpdate(
+      { _id: id, status: { $ne: "assigned" } }, // don't disable if already assigned
+      { $set: { status: "disabled" } },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: "Not found, or already assigned (cannot disable)." });
+    }
+
+    return res.json({ success: true, wallet: updated });
+  } catch (err) {
+    console.error("disablePoolAddress error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// PATCH /admin/address-pool/:id/enable
+exports.enablePoolAddress = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const updated = await Wallet.findOneAndUpdate(
+      { _id: id, status: "disabled" },
+      { $set: { status: "available", assignedTo: null, assignedAt: null } },
+      { new: true }
+    );
+
+    if (!updated) {
+      return res.status(404).json({ message: "Not found or not disabled." });
+    }
+
+    return res.json({ success: true, wallet: updated });
+  } catch (err) {
+    console.error("enablePoolAddress error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};

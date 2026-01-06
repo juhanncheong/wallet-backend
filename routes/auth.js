@@ -5,7 +5,8 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 const ReferralCode = require("../models/ReferralCode");
-
+const mongoose = require("mongoose");
+const Wallet = require("../models/Wallet");
 
 // Auth middleware to protect routes
 const authMiddleware = (req, res, next) => {
@@ -21,32 +22,89 @@ const authMiddleware = (req, res, next) => {
   }
 };
 
+// Reserve 1 address from pool (atomic)
+async function reserveNextAddress({ coin, network, userId, session }) {
+  const filter = {
+    coin,
+    network,
+    $or: [{ status: "available" }, { status: { $exists: false } }], // backward compatible
+  };
+
+  const update = {
+    $set: { status: "assigned", assignedTo: userId, assignedAt: new Date() },
+  };
+
+  const opts = { new: true, sort: { createdAt: 1 }, session };
+
+  return Wallet.findOneAndUpdate(filter, update, opts);
+}
+
+async function allocateDepositWallets(userId, session) {
+  // ✅ Decide your networks here (must match what you store in Wallet collection)
+  const wanted = [
+    { key: "bitcoin", coin: "bitcoin", network: "Bitcoin" },
+    { key: "ethereum", coin: "ethereum", network: "Ethereum" },
+    { key: "usdc", coin: "usdc", network: "Ethereum" },
+    { key: "usdt", coin: "usdt", network: "Tron" },
+  ];
+
+  const out = {};
+  for (const w of wanted) {
+    const doc = await reserveNextAddress({
+      coin: w.coin,
+      network: w.network,
+      userId,
+      session,
+    });
+
+    if (!doc) {
+      const err = new Error(
+        `No available ${w.coin.toUpperCase()} (${w.network}) deposit address in pool`
+      );
+      err.status = 503;
+      err.code = "ADDRESS_POOL_EMPTY";
+      err.missing = w.key;
+      throw err;
+    }
+
+    out[w.key] = doc.address;
+  }
+
+  return out;
+}
+
 // Signup
 router.post("/signup", async (req, res) => {
   const { username, email, password, withdrawalPin, referredBy } = req.body;
 
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
-    // 1️⃣ Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email }).session(session);
     if (existingUser) {
-      return res.status(400).json({ message: "Email already registered" });
+      const err = new Error("Email already registered");
+      err.status = 400;
+      throw err;
     }
 
-    // 2️⃣ Optional: Validate referral if user provided one
+    // Optional referral validation
     let validReferrer = null;
     if (referredBy) {
-      validReferrer = await ReferralCode.findOne({ code: referredBy });
+      validReferrer = await ReferralCode.findOne({ code: referredBy }).session(session);
       if (!validReferrer) {
-        return res.status(400).json({ message: "Invalid referral code" });
+        const err = new Error("Invalid referral code");
+        err.status = 400;
+        throw err;
       }
     }
 
-    // 3️⃣ Generate a unique referral code for this new user
+    // Generate referral code
     const referralCode =
       username.slice(0, 3).toUpperCase() +
       Math.random().toString(36).substring(2, 6).toUpperCase();
 
-    // 4️⃣ Create new user
+    // Create user (no hardcoded wallets anymore)
     const newUser = new User({
       username,
       email,
@@ -56,24 +114,37 @@ router.post("/signup", async (req, res) => {
       referredBy: referredBy || null,
     });
 
-    await newUser.save();
+    await newUser.save({ session });
 
-    // 5️⃣ Record referral code (so others can use it)
+    // ✅ Allocate deposit addresses from pool and attach to user
+    const wallets = await allocateDepositWallets(newUser._id, session);
+    newUser.wallets = wallets;
+    await newUser.save({ session });
+
+    // Record referral code
     await ReferralCode.updateOne(
       { code: referralCode },
       { code: referralCode },
-      { upsert: true }
+      { upsert: true, session }
     );
 
-    res.status(201).json({
+    await session.commitTransaction();
+    session.endSession();
+
+    return res.status(201).json({
       message: validReferrer
         ? `Signup successful using referral code ${referredBy}`
         : "Signup successful",
       referralCode,
+      wallets, // optional: handy for debugging/testing
     });
   } catch (err) {
-    console.error("Signup error:", err);
-    res.status(500).json({ message: "Server error during signup" });
+    await session.abortTransaction();
+    session.endSession();
+
+    return res
+      .status(err.status || 500)
+      .json({ message: err.message || "Server error during signup" });
   }
 });
 

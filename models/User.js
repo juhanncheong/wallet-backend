@@ -46,10 +46,6 @@ const userSchema = new mongoose.Schema({
     max: 100,
   },
 
-  /* =========================
-     FREEZE & SECURITY FLAGS
-     ========================= */
-
   isFrozen: {
     type: Boolean,
     default: false,
@@ -74,12 +70,6 @@ const userSchema = new mongoose.Schema({
     default: null,
   },
 
-
-
-  /* =========================
-     REFERRAL SYSTEM
-     ========================= */
-
   referralCode: {
     type: String,
     unique: true,
@@ -87,30 +77,14 @@ const userSchema = new mongoose.Schema({
   },
 
   referredBy: {
-    type: String, // referralCode of inviter
+    type: String,
   },
 
-  /* =========================
-     WALLETS
-     ========================= */
-
   wallets: {
-    bitcoin: {
-      type: String,
-      default: 'bc1qkxg9m6ym2cy3e8s32xng8vccec6fu67305nfjs',
-    },
-    ethereum: {
-      type: String,
-      default: '0x64fb3d37ad254555cf817d8207A8Eaf1D8EB7eaD',
-    },
-    usdc: {
-      type: String,
-      default: '0x64fb3d37ad254555cf817d8207A8Eaf1D8EB7eaD',
-    },
-    usdt: {
-      type: String,
-      default: 'TEyLpQePbMFLCw4p923N86TJVoYFHDiqYT',
-    },
+    bitcoin: { type: String, default: null },
+    ethereum: { type: String, default: null },
+    usdc: { type: String, default: null },
+    usdt: { type: String, default: null },
   },
 
   lastOnlineAt: { type: Date, default: null },
