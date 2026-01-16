@@ -1,12 +1,11 @@
-import express from "express";
-
+const express = require("express");
 const router = express.Router();
 
-// ✅ Global market stats (market cap, volume, dominance)
+// ✅ GET /api/markets/global
 router.get("/global", async (req, res) => {
   try {
     const r = await fetch("https://api.coingecko.com/api/v3/global", {
-      headers: { accept: "application/json" }
+      headers: { accept: "application/json" },
     });
 
     if (!r.ok) {
@@ -15,12 +14,12 @@ router.get("/global", async (req, res) => {
 
     const data = await r.json();
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: "Server failed to fetch global data" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch global" });
   }
 });
 
-// ✅ Top markets list (BTC, ETH, etc.)
+// ✅ GET /api/markets/top
 router.get("/top", async (req, res) => {
   try {
     const url =
@@ -29,7 +28,7 @@ router.get("/top", async (req, res) => {
       "&sparkline=true&price_change_percentage=24h,7d";
 
     const r = await fetch(url, {
-      headers: { accept: "application/json" }
+      headers: { accept: "application/json" },
     });
 
     if (!r.ok) {
@@ -38,9 +37,9 @@ router.get("/top", async (req, res) => {
 
     const data = await r.json();
     res.json(data);
-  } catch (err) {
-    res.status(500).json({ error: "Server failed to fetch markets data" });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch markets" });
   }
 });
 
-export default router;
+module.exports = router;

@@ -9,14 +9,14 @@ const Withdrawal = require("./models/Withdrawal");
 const Coin = require("./models/Coin");
 const Admin = require("./models/Admin");
 
-// Routes
+// ✅ Routes
+const authRoutes = require("./routes/auth");
 const transactionRoutes = require("./routes/transaction");
 const walletRoutes = require("./routes/wallet");
 const withdrawalRoutes = require("./routes/withdrawals");
 const adminRoutes = require("./routes/admin");
 const futuresRoutes = require("./routes/futures");
-const authRoutes = require("./routes/auth");
-const marketsRoutes = require("./routes/markets"); // ✅ NEW (backend proxy for CoinGecko)
+const marketsRoutes = require("./routes/markets"); // ✅ NEW
 
 dotenv.config();
 
@@ -26,16 +26,16 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ✅ API Routes
+// ✅ API Routes (ONLY ONCE each)
 app.use("/api", authRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/wallet", walletRoutes);
-app.use("/api/user", walletRoutes); // keeps your frontend authGuard working (calls /api/user)
+app.use("/api/user", walletRoutes); // keeps your authGuard working
 app.use("/api/admin", adminRoutes);
 app.use("/api/futures", futuresRoutes);
-app.use("/api/markets", marketsRoutes); // ✅ FIXED (no more CORS in browser)
+app.use("/api/markets", marketsRoutes); // ✅ COINGECKO PROXY
 
-// Keep your admin withdrawal route (if your panel uses /admin)
+// if your admin withdrawal panel uses /admin
 app.use("/admin", withdrawalRoutes);
 
 // ✅ MongoDB connection
@@ -47,9 +47,7 @@ mongoose
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.error(err));
 
-/* ==============================
-   ADMIN LOGIN (your existing)
-================================ */
+// ✅ Admin Login
 app.post("/admin/login", async (req, res) => {
   try {
     const { username, password } = req.body;
@@ -97,9 +95,7 @@ app.patch("/admin/users/:id/balance", verifyAdmin, async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).send("User not found");
 
-  if (typeof user.balance !== "number") {
-    user.balance = 0;
-  }
+  if (typeof user.balance !== "number") user.balance = 0;
 
   user.balance += amount;
   await user.save();
@@ -112,7 +108,6 @@ app.post("/admin/users/:id/wallets", verifyAdmin, async (req, res) => {
   const user = await User.findById(req.params.id);
   if (!user) return res.status(404).send("User not found");
 
-  // merge existing wallets + new body
   user.wallets = { ...(user.wallets || {}), ...(req.body || {}) };
 
   await user.save();
