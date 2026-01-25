@@ -1,6 +1,7 @@
-const Balance = require("../models/Balance");
-const User = require("../models/User");
-const Transaction = require("../models/Transaction");
+// adminUpdateCoin.js
+const Balance = require("./models/Balance");
+const User = require("./models/User");
+const Transaction = require("./models/Transaction");
 
 module.exports = async (req, res) => {
   const { id } = req.params;
@@ -8,7 +9,6 @@ module.exports = async (req, res) => {
 
   if (!coin) return res.status(400).json({ message: "Missing coin" });
 
-  // Normalize
   const asset = String(coin).trim().toUpperCase();
 
   amount = Number(amount);
@@ -24,7 +24,6 @@ module.exports = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Load current balance row
     const row = await Balance.findOne({ userId: id, asset }).lean();
     const current = Number(row?.available || 0);
 
