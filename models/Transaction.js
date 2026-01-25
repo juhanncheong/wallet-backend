@@ -13,8 +13,9 @@ const transactionSchema = new mongoose.Schema({
   },
   coin: {
     type: String,
-    enum: ['bitcoin', 'ethereum', 'usdc', 'usdt'],
     required: true,
+    trim: true,
+    uppercase: true,
   },
   amount: {
     type: Number,
