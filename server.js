@@ -19,6 +19,7 @@ const futuresRoutes = require("./routes/futures");
 const marketsRoutes = require("./routes/markets");
 const balancesRoutes = require("./routes/balances");
 const adminBalanceRoutes = require("./routes/adminBalance");
+const tradeRoutes = require("./routes/trade");
 
 dotenv.config();
 
@@ -39,6 +40,8 @@ app.use("/api/markets", marketsRoutes);
 app.use("/admin", withdrawalRoutes);
 app.use("/api/balances", balancesRoutes);
 app.use("/api/admin", adminBalanceRoutes);
+app.use("/api/trade", tradeRoutes);
+
 
 // ✅ MongoDB connection
 mongoose
