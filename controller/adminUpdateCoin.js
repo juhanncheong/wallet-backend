@@ -1,7 +1,7 @@
 // adminUpdateCoin.js
-const Balance = require("./models/Balance");
-const User = require("./models/User");
-const Transaction = require("./models/Transaction");
+const Balance = require("../models/Balance");
+const User = require("../models/User");
+const Transaction = require("../models/Transaction");
 
 module.exports = async (req, res) => {
   const { id } = req.params;
