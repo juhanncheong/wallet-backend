@@ -41,6 +41,7 @@ app.use("/admin", withdrawalRoutes);
 app.use("/api/balances", balancesRoutes);
 app.use("/api/admin", adminBalanceRoutes);
 app.use("/api/trade", tradeRoutes);
+app.use("/api/withdrawals", withdrawalRoutes);
 
 
 // ✅ MongoDB connection

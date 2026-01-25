@@ -37,6 +37,8 @@ const transactionSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  network: { type: String, default: "" },
+  address: { type: String, default: "" },
 });
 
 module.exports = mongoose.model("Transaction", transactionSchema);

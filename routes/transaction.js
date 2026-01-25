@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
+const Balance = require("../models/Balance");
 
 // POST - Create a new transaction (deposit or withdrawal)
 router.post('/', async (req, res) => {
@@ -37,11 +38,18 @@ router.put('/:id/status', async (req, res) => {
     await tx.save();
 
     // If rejected, refund the user
-    if (status === 'failed') {
-      const user = await User.findById(tx.userId);
-      user.coins[tx.coin] += tx.amount;
-      await user.save();
-    }
+    if (status === "failed") {
+  const asset = String(tx.coin || "").trim().toUpperCase();
+
+  const bal = await Balance.findOne({ userId: tx.userId, asset });
+  if (!bal) {
+    // if somehow missing, recreate then refund
+    await Balance.create({ userId: tx.userId, asset, available: tx.amount, locked: 0 });
+  } else {
+    bal.available = Number((Number(bal.available || 0) + Number(tx.amount || 0)).toFixed(12));
+    await bal.save();
+  }
+}
 
     res.json({ message: `Transaction ${status}` });
   } catch (err) {
