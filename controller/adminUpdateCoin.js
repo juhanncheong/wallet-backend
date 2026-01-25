@@ -1,6 +1,6 @@
 // adminUpdateCoin.js
-const User = require("./models/User");
-const Transaction = require("./models/Transaction");
+const User = require("../models/User");
+const Transaction = require("../models/Transaction");
 
 // 50 USDT-pair base coins (your list)
 const SUPPORTED_COINS = [
