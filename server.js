@@ -16,7 +16,9 @@ const walletRoutes = require("./routes/wallet");
 const withdrawalRoutes = require("./routes/withdrawals");
 const adminRoutes = require("./routes/admin");
 const futuresRoutes = require("./routes/futures");
-const marketsRoutes = require("./routes/markets"); // ✅ NEW
+const marketsRoutes = require("./routes/markets");
+const balancesRoutes = require("./routes/balances");
+const adminBalanceRoutes = require("./routes/adminBalance");
 
 dotenv.config();
 
@@ -30,13 +32,13 @@ app.use(express.json());
 app.use("/api", authRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/wallet", walletRoutes);
-app.use("/api/user", walletRoutes); // keeps your authGuard working
+app.use("/api/user", walletRoutes); 
 app.use("/api/admin", adminRoutes);
 app.use("/api/futures", futuresRoutes);
-app.use("/api/markets", marketsRoutes); // ✅ COINGECKO PROXY
-
-// if your admin withdrawal panel uses /admin
+app.use("/api/markets", marketsRoutes);
 app.use("/admin", withdrawalRoutes);
+app.use("/api/balances", balancesRoutes);
+app.use("/api/admin", adminBalanceRoutes);
 
 // ✅ MongoDB connection
 mongoose

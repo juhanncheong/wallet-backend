@@ -1,5 +1,6 @@
+// middleware/auth.js
 const jwt = require("jsonwebtoken");
-const User = require("../models/User"); // adjust path if your folder differs
+const User = require("../models/User"); // keep this path as you have it
 
 module.exports = async (req, res, next) => {
   const authHeader = req.headers.authorization;
@@ -13,6 +14,9 @@ module.exports = async (req, res, next) => {
 
     // Support different token payload shapes
     const userId = decoded.id || decoded._id || decoded.userId;
+
+    // ✅ add this so all routes can use req.userId
+    req.userId = userId;
 
     // Touch lastOnlineAt (throttled to reduce DB writes)
     if (userId) {
