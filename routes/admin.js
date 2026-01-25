@@ -575,4 +575,20 @@ router.patch("/users/:id/reset-withdrawal-pin-lock", verifyAdmin, async (req, re
   }
 });
 
+// ✅ Admin: Get user balances (NEW SYSTEM)
+router.get("/users/:id/balances", verifyAdmin, async (req, res) => {
+  try {
+    const Balance = require("../models/Balance");
+
+    const balances = await Balance.find({
+      userId: req.params.id,
+    }).sort({ asset: 1 });
+
+    return res.json(balances);
+  } catch (err) {
+    console.error("Get user balances error:", err);
+    return res.status(500).json({ message: "Server error" });
+  }
+});
+
 module.exports = router;
