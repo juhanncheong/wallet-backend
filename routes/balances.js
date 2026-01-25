@@ -1,27 +1,28 @@
-// routes/adminBalance.js
+// routes/balances.js
 const express = require("express");
 const router = express.Router();
 
-const adminUpdateCoin = require("../adminUpdateCoin");
+const Balance = require("../models/Balance");
+const auth = require("./auth"); // <-- your auth middleware is in routes/auth.js
 
-// If you already have verifyAdmin middleware somewhere, use that.
-// If not, simplest is to re-use the same JWT logic you use in other admin routes.
-const jwt = require("jsonwebtoken");
-
-function verifyAdmin(req, res, next) {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(403).json({ message: "Token missing" });
-
+// GET /api/balances
+router.get("/", auth, async (req, res) => {
   try {
-    const decoded = jwt.verify(token, "secretkey");
-    req.adminId = decoded.adminId;
-    next();
-  } catch {
-    return res.status(403).json({ message: "Invalid token" });
-  }
-}
+    const userId = req.userId || req.user?.id || req.user?._id || req.user?.userId;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
-// ✅ This is the endpoint your React is calling:
-router.patch("/users/:id/coins", verifyAdmin, adminUpdateCoin);
+    // show only coins user actually has (available>0 or locked>0)
+    const rows = await Balance.find({
+      userId,
+      $or: [{ available: { $gt: 0 } }, { locked: { $gt: 0 } }],
+    })
+      .sort({ asset: 1 })
+      .lean();
+
+    res.json({ data: rows });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to load balances" });
+  }
+});
 
 module.exports = router;
