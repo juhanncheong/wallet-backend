@@ -260,41 +260,52 @@ router.get("/stream/spot", (req, res) => {
   });
 });
 
-router.get("/candles", async (req, res) => {
-  try {
-    const { instId, bar = "5m", limit = 200 } = req.query;
+async function fetchCandles(instId, bar, limit, after, before) {
+  // OKX: /api/v5/market/candles?instId=BTC-USDT&bar=5m&limit=200
+  const qp = new URLSearchParams();
+  qp.set("instId", instId);
+  qp.set("bar", bar);
+  qp.set("limit", String(limit));
 
-    if (!instId) {
-      return res.status(400).json({ error: "instId required" });
-    }
+  // Optional pagination (OKX supports after/before as timestamps in ms)
+  if (after) qp.set("after", String(after));
+  if (before) qp.set("before", String(before));
 
-    const url = "https://www.okx.com/api/v5/market/candles";
+  const url = `${OKX_BASE}/api/v5/market/candles?${qp.toString()}`;
+  const r = await fetchFn(url, { headers: { accept: "application/json" } });
+  if (!r.ok) throw new Error(`OKX candles failed ${r.status}`);
 
-    const response = await fetch(
-      `${url}?instId=${instId}&bar=${bar}&limit=${limit}`
-    );
+  const j = await r.json();
+  const rows = Array.isArray(j?.data) ? j.data : [];
 
-    const data = await response.json();
+  // OKX candles format (array of arrays):
+  // [ts, o, h, l, c, vol, volCcy, volCcyQuote, confirm]
+  // Lightweight Charts wants:
+  // { time: UNIX_SECONDS, open, high, low, close, volume }
+  const out = rows
+    .map((x) => {
+      const tsMs = Number(x[0]);
+      const o = Number(x[1]);
+      const h = Number(x[2]);
+      const l = Number(x[3]);
+      const c = Number(x[4]);
+      const v = Number(x[5]);
 
-    if (data.code !== "0") {
-      return res.status(500).json({ error: data.msg });
-    }
+      if (![tsMs, o, h, l, c].every(Number.isFinite)) return null;
+      return {
+        time: Math.floor(tsMs / 1000), // seconds
+        open: o,
+        high: h,
+        low: l,
+        close: c,
+        volume: Number.isFinite(v) ? v : undefined,
+      };
+    })
+    .filter(Boolean)
+    // OKX often returns newest -> oldest, chart wants oldest -> newest
+    .sort((a, b) => a.time - b.time);
 
-    // OKX returns newest first → reverse for chart
-    const candles = data.data.reverse().map(c => ({
-      time: Math.floor(Number(c[0]) / 1000), // seconds
-      open: Number(c[1]),
-      high: Number(c[2]),
-      low: Number(c[3]),
-      close: Number(c[4]),
-      volume: Number(c[5]),
-    }));
-
-    res.json(candles);
-  } catch (err) {
-    console.error("Candles error:", err);
-    res.status(500).json({ error: "Failed to fetch candles" });
-  }
-});
+  return { instId, bar, candles: out };
+}
 
 module.exports = router;
