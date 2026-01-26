@@ -276,11 +276,37 @@ router.post("/orders/:id/cancel", auth, async (req, res) => {
   }
 });
 
-/**
- * GET MY TRADE HISTORY
- * Optional query:
- *   ?instId=BTC-USDT
- */
+// cancel ALL open orders (unlocks funds)
+// optional body: { instId: "BTC-USDT" }
+router.post("/orders/cancel-all", auth, async (req, res) => {
+  try {
+    const userId = req.userId;
+    await assertNotFrozen(userId);
+
+    const q = { userId, status: "open", type: "limit" };
+
+    // optional filter by pair
+    if (req.body?.instId) {
+      q.instId = String(req.body.instId).toUpperCase();
+    }
+
+    const orders = await Order.find(q);
+    if (!orders.length) return res.json({ message: "No open orders", cancelled: 0 });
+
+    // unlock funds + mark cancelled
+    for (const o of orders) {
+      await unlockFunds(userId, o.lockedAsset, o.lockedAmount);
+      o.status = "cancelled";
+      await o.save();
+    }
+
+    res.json({ message: "All open orders cancelled", cancelled: orders.length });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message || "Cancel-all failed" });
+  }
+});
+
+// Get trade history
 router.get("/history", auth, async (req, res) => {
   try {
     const userId = req.userId;
