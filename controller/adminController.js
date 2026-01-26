@@ -585,45 +585,37 @@ exports.adminListOpenOrders = async (req, res) => {
  *  - from, to (optional ISO date)
  *  - page, limit
  */
+// ✅ Completed = Trade history (not Order)
 exports.adminListCompletedOrders = async (req, res) => {
   try {
+    const mongoose = require("mongoose");
+    const Trade = require("../models/Trade");
+
     const { userId, instId } = req.query;
-    const status = String(req.query.status || "filled").toLowerCase(); // default filled
     const page = Math.max(parseInt(req.query.page || "1", 10), 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
 
-    const filter = { type: "limit" };
+    const q = {};
 
-    // completed means: filled/cancelled
-    if (["filled", "cancelled"].includes(status)) {
-      filter.status = status;
-    } else {
-      // if they pass nonsense, keep safe default
-      filter.status = "filled";
-    }
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) q.userId = userId;
+    if (instId) q.instId = String(instId).trim().toUpperCase();
 
-    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
-      filter.userId = userId;
-    }
-    if (instId) {
-      filter.instId = String(instId).trim().toUpperCase();
-    }
-
-    // date filter (createdAt)
+    // date filter on createdAt
     const { from, to } = req.query;
     if (from || to) {
-      filter.createdAt = {};
-      if (from) filter.createdAt.$gte = new Date(from);
-      if (to) filter.createdAt.$lte = new Date(to);
+      q.createdAt = {};
+      if (from) q.createdAt.$gte = new Date(from);
+      if (to) q.createdAt.$lte = new Date(to);
     }
 
     const [items, total] = await Promise.all([
-      Order.find(filter)
+      Trade.find(q)
         .populate("userId", "email username")
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
-        .limit(limit),
-      Order.countDocuments(filter),
+        .limit(limit)
+        .lean(),
+      Trade.countDocuments(q),
     ]);
 
     return res.json({
@@ -634,11 +626,10 @@ exports.adminListCompletedOrders = async (req, res) => {
       pages: Math.ceil(total / limit),
     });
   } catch (err) {
-    console.error("adminListCompletedOrders error:", err);
+    console.error("adminListCompletedOrders (Trade) error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 };
-
 
 /**
  * POST /api/admin/orders/:orderId/cancel
