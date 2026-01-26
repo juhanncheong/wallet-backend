@@ -2,10 +2,10 @@ const express = require("express");
 const router = express.Router();
 
 const Transaction = require("../models/Transaction");
-const Balance = require("../models/Balance"); // <-- NEW
-const auth = require("./auth");               // <-- your auth middleware is routes/auth.js
+const Balance = require("../models/Balance");
+const auth = require("../middleware/auth");
 
-// ✅ ADMIN: GET /admin/withdrawals  (your existing)
+// ADMIN: GET /admin/withdrawals
 router.get("/withdrawals", async (req, res) => {
   try {
     const allWithdrawals = await Transaction.find({ type: "withdrawal" })
@@ -15,7 +15,7 @@ router.get("/withdrawals", async (req, res) => {
     res.json(allWithdrawals);
   } catch (err) {
     console.error("Fetch withdrawals error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
