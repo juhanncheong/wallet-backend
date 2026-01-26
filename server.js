@@ -108,10 +108,17 @@ app.get("/admin/users", verifyAdmin, async (req, res) => {
   res.json(users);
 });
 
-// ✅ Admin: Get Withdrawal Requests
-app.get("/admin/withdrawals", verifyAdmin, async (req, res) => {
-  const withdrawals = await Withdrawal.find().populate("userId", "email");
-  res.json(withdrawals);
+// ✅ Admin: GET /admin/withdrawals
+router.get("/withdrawals", verifyAdmin, async (req, res) => {
+  try {
+    const allWithdrawals = await Transaction.find({ type: "withdrawal" })
+      .populate("userId", "email")
+      .sort({ createdAt: -1 });
+
+    res.json(allWithdrawals);
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
 });
 
 app.use("/admin", withdrawalRoutes);
