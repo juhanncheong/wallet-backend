@@ -3,7 +3,7 @@ const express = require("express");
 const router = express.Router();
 
 const Balance = require("../models/Balance");
-const auth = require("./auth"); // <-- your auth middleware is in routes/auth.js
+const auth = require("../middleware/auth"); 
 
 // GET /api/balances
 router.get("/", auth, async (req, res) => {
