@@ -6,6 +6,7 @@ const auth = require("../middleware/auth");
 const Big = require("big.js");
 const mongoose = require("mongoose");
 const RewardGrant = require("../models/RewardGrant");
+const Balance = require("../models/Balance");
 
 // POST /api/wallet/withdraw
 router.post("/withdraw", auth, async (req, res) => {
@@ -64,26 +65,40 @@ if ((user.withdrawalPinFailCount || 0) !== 0) {
   await user.save();
 }
 
-    if (user.coins[coin] < amount) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
+    // Normalize coin param to your Balance.asset key (recommended: uppercase symbols)
+function normalizeAssetKey(c) {
+  const x = String(c || "").trim().toUpperCase();
+  if (x === "BITCOIN") return "BTC";
+  if (x === "ETHEREUM") return "ETH";
+  return x; // USDT, USDC, DOGE, XRP, SOL...
+}
 
-    if (!address || address.length < 8) {
-      return res.status(400).json({ message: "Invalid wallet address" });
-    }
+const asset = normalizeAssetKey(coin);
+const amt = Number(amount);
 
-    // Deduct coin
-    user.coins[coin] -= amount;
-    await user.save();
+if (!Number.isFinite(amt) || amt <= 0) {
+  return res.status(400).json({ message: "Invalid amount" });
+}
+
+// ✅ Atomic deduct from Balance.available
+const updatedBal = await Balance.findOneAndUpdate(
+  { userId, asset, available: { $gte: amt } },
+  { $inc: { available: -amt } },
+  { new: true }
+);
+
+if (!updatedBal) {
+  return res.status(400).json({ message: "Insufficient balance" });
+}
 
     // Create transaction
     await Transaction.create({
       userId,
       type: "withdrawal",
-      coin,
-      amount,
+      coin: asset, 
+      amount: amt,
       status: "pending",
-      address, // ✅ store the withdrawal address
+      address,
     });
 
     res.json({ message: "Withdrawal request submitted" });
