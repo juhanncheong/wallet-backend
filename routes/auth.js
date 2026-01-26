@@ -7,6 +7,7 @@ const User = require("../models/User");
 const ReferralCode = require("../models/ReferralCode");
 const mongoose = require("mongoose");
 const Wallet = require("../models/Wallet");
+const Balance = require("../models/Balance");
 
 // Auth middleware to protect routes
 const authMiddleware = (req, res, next) => {
@@ -198,32 +199,25 @@ router.get("/user", authMiddleware, async (req, res) => {
     const user = await User.findById(req.user.userId).select("-password");
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // USD conversion rates
-    const btcUsd = 65000;
-    const ethUsd = 3500;
-    const usdcUsd = 1;
-    const usdtUsd = 1;
+    // ✅ pull balances from Balance collection
+    const rows = await Balance.find({ userId: user._id }).lean();
 
-    const totalBalance =
-      (user.coins?.bitcoin || 0) * btcUsd +
-      (user.coins?.ethereum || 0) * ethUsd +
-      (user.coins?.usdc || 0) * usdcUsd +
-      (user.coins?.usdt || 0) * usdtUsd;
+    // build { BTC: 31, ETH: 11, ... }
+    const balances = {};
+    for (const r of rows) balances[r.asset] = Number(r.available || 0);
 
     res.json({
-  username: user.username,
-  email: user.email,
-  referralCode: user.referralCode,
-  balance: totalBalance,
-  coins: user.coins,
-  wallets: user.wallets,
-  availableCoins: user.availableCoins || {},
-  isFrozen: user.isFrozen,
-  isWithdrawFrozen: user.isWithdrawFrozen,
-  createdAt: user.createdAt,
-  creditScore: user.creditScore,
-  availableCoins: user.availableCoins,
-});
+      username: user.username,
+      email: user.email,
+      referralCode: user.referralCode,
+      wallets: user.wallets,
+      balances,              // ✅ new
+      availableCoins: user.availableCoins || {},
+      isFrozen: user.isFrozen,
+      isWithdrawFrozen: user.isWithdrawFrozen,
+      createdAt: user.createdAt,
+      creditScore: user.creditScore,
+    });
   } catch (err) {
     console.error("Fetch user error:", err);
     res.status(500).json({ message: "Server error" });
