@@ -203,42 +203,70 @@ router.post("/limit", auth, async (req, res) => {
     if (quote !== "USDT") return res.status(400).json({ error: "USDT pairs only" });
 
     const price = Number(req.body.price);
-    const amountBase = Number(req.body.amountBase);
-    if (!Number.isFinite(price) || price <= 0) return res.status(400).json({ error: "Bad price" });
-    if (!Number.isFinite(amountBase) || amountBase <= 0) return res.status(400).json({ error: "Bad amountBase" });
+    if (!Number.isFinite(price) || price <= 0) {
+      return res.status(400).json({ error: "Bad price" });
+    }
 
-    let lockedAsset, lockedAmount;
+    let amountBase;
 
     if (side === "buy") {
-      lockedAsset = "USDT";
-      lockedAmount = price * amountBase;
+      const amountUSDT = Number(req.body.amountUSDT);
+      if (!Number.isFinite(amountUSDT) || amountUSDT <= 0) {
+        return res.status(400).json({ error: "Bad amountUSDT" });
+      }
+
+      // Option A: user enters USDT spend → convert to base amount for the order record
+      amountBase = amountUSDT / price;
+
+      const lockedAsset = "USDT";
+      const lockedAmount = amountUSDT;
 
       const ok = await lockFunds(userId, lockedAsset, lockedAmount);
       if (!ok) return res.status(400).json({ error: "Insufficient USDT" });
 
-    } else if (side === "sell") {
-      lockedAsset = base;
-      lockedAmount = amountBase;
+      const order = await Order.create({
+        userId, instId, base, quote,
+        side, type: "limit",
+        price,
+        amountBase,
+        feeRate: FEE_RATE,
+        status: "open",
+        lockedAsset,
+        lockedAmount
+      });
+
+      return res.json({ message: "Limit order placed", order });
+    }
+
+    // SELL stays the same as before:
+    if (side === "sell") {
+      amountBase = Number(req.body.amountBase);
+      if (!Number.isFinite(amountBase) || amountBase <= 0) {
+        return res.status(400).json({ error: "Bad amountBase" });
+      }
+
+      const lockedAsset = base;
+      const lockedAmount = amountBase;
 
       const ok = await lockFunds(userId, lockedAsset, lockedAmount);
       if (!ok) return res.status(400).json({ error: `Insufficient ${base}` });
 
-    } else {
-      return res.status(400).json({ error: "side must be buy or sell" });
+      const order = await Order.create({
+        userId, instId, base, quote,
+        side, type: "limit",
+        price,
+        amountBase,
+        feeRate: FEE_RATE,
+        status: "open",
+        lockedAsset,
+        lockedAmount
+      });
+
+      return res.json({ message: "Limit order placed", order });
     }
 
-    const order = await Order.create({
-      userId, instId, base, quote,
-      side, type: "limit",
-      price,
-      amountBase,
-      feeRate: FEE_RATE,
-      status: "open",
-      lockedAsset,
-      lockedAmount
-    });
+    return res.status(400).json({ error: "side must be buy or sell" });
 
-    return res.json({ message: "Limit order placed", order });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Limit order failed" });
   }
