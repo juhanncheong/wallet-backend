@@ -187,41 +187,36 @@ exports.toggleFreezeWithdrawal = async (req, res) => {
 
 exports.updateWalletAddress = async (req, res) => {
   const { id } = req.params;
-  const { coin, address } = req.body;
+  const { network, address } = req.body;
 
-  // 🧠 Normalize coin names
-  const coinMap = {
-    btc: "bitcoin",
-    eth: "ethereum",
-    usdc: "usdc",
-    usdt: "usdt",
-    bitcoin: "bitcoin",
-    ethereum: "ethereum",
-  };
-
-  const normalizedCoin = coinMap[coin];
-  if (!normalizedCoin) {
-    return res.status(400).json({ message: "Invalid coin type" });
+  const net = String(network || "").trim().toUpperCase();
+  if (!["ERC20", "BEP20", "TRC20"].includes(net)) {
+    return res.status(400).json({ message: "Invalid network (use ERC20/BEP20/TRC20)" });
+  }
+  if (!address || typeof address !== "string" || address.trim().length < 8) {
+    return res.status(400).json({ message: "Invalid address" });
   }
 
   try {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.wallets[normalizedCoin] = address;
+    // ensure wallets exists
+    user.wallets = user.wallets || {};
+    user.wallets[net] = address.trim();
+
     await user.save();
 
-    res.json({
+    return res.json({
       success: true,
-      message: `${normalizedCoin.toUpperCase()} address updated successfully`,
+      message: `${net} address updated successfully`,
       wallets: user.wallets,
     });
   } catch (err) {
     console.error("Update wallet error:", err);
-    res.status(500).json({ message: "Failed to update wallet address" });
+    return res.status(500).json({ message: "Failed to update wallet address" });
   }
 };
-
 
 // ✅ Admin manually creates a referral code (used for signup)
 const ReferralCode = require("../models/ReferralCode");
