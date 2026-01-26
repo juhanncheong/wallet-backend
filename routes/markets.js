@@ -308,4 +308,36 @@ async function fetchCandles(instId, bar, limit, after, before) {
   return { instId, bar, candles: out };
 }
 
+// ✅ GET /api/markets/candles?instId=BTC-USDT&bar=5m&limit=300
+router.get("/candles", async (req, res) => {
+  try {
+    const instId = String(req.query.instId || "").toUpperCase();
+    const bar = String(req.query.bar || "5m"); // 1m, 5m, 15m, 1H, 4H, 1D, etc.
+
+    const limit = Math.max(
+      10,
+      Math.min(parseInt(req.query.limit || "300", 10) || 300, 1000)
+    );
+
+    // Optional paging support
+    const after = req.query.after ? Number(req.query.after) : null;
+    const before = req.query.before ? Number(req.query.before) : null;
+
+    if (!instId || !instId.includes("-")) {
+      return res.status(400).json({ error: "Bad instId" });
+    }
+
+    // Very light validation for bar (so nobody sends garbage)
+    const okBar = /^[0-9]+(m|H|D|W|M)$/.test(bar); // examples: 1m, 5m, 1H, 1D
+    if (!okBar) {
+      return res.status(400).json({ error: "Bad bar" });
+    }
+
+    const data = await fetchCandles(instId, bar, limit, after, before);
+    res.json({ data });
+  } catch (e) {
+    res.status(500).json({ error: "Failed to fetch OKX candles" });
+  }
+});
+
 module.exports = router;
