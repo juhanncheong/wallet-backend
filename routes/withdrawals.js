@@ -6,17 +6,11 @@ const Balance = require("../models/Balance");
 const auth = require("../middleware/auth");
 
 // ADMIN: GET /admin/withdrawals
-router.get("/withdrawals", async (req, res) => {
-  try {
-    const allWithdrawals = await Transaction.find({ type: "withdrawal" })
-      .populate("userId", "email")
-      .sort({ createdAt: -1 });
-
-    res.json(allWithdrawals);
-  } catch (err) {
-    console.error("Fetch withdrawals error:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
+router.get("/withdrawals", verifyAdmin, async (req, res) => {
+  const withdrawals = await Transaction.find({ type: "withdrawal" })
+    .populate("userId", "email")
+    .sort({ createdAt: -1 });
+  res.json(withdrawals);
 });
 
 // ✅ USER: POST /api/withdrawals
