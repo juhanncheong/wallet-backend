@@ -276,4 +276,28 @@ router.post("/orders/:id/cancel", auth, async (req, res) => {
   }
 });
 
+/**
+ * GET MY TRADE HISTORY
+ * Optional query:
+ *   ?instId=BTC-USDT
+ */
+router.get("/history", auth, async (req, res) => {
+  try {
+    const userId = req.userId;
+
+    const q = { userId };
+    if (req.query.instId) {
+      q.instId = String(req.query.instId).toUpperCase();
+    }
+
+    const rows = await Trade.find(q)
+      .sort({ createdAt: -1 })
+      .lean();
+
+    res.json({ data: rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message || "Failed to fetch history" });
+  }
+});
+
 module.exports = router;
