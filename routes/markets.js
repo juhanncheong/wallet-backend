@@ -260,4 +260,41 @@ router.get("/stream/spot", (req, res) => {
   });
 });
 
+router.get("/candles", async (req, res) => {
+  try {
+    const { instId, bar = "5m", limit = 200 } = req.query;
+
+    if (!instId) {
+      return res.status(400).json({ error: "instId required" });
+    }
+
+    const url = "https://www.okx.com/api/v5/market/candles";
+
+    const response = await fetch(
+      `${url}?instId=${instId}&bar=${bar}&limit=${limit}`
+    );
+
+    const data = await response.json();
+
+    if (data.code !== "0") {
+      return res.status(500).json({ error: data.msg });
+    }
+
+    // OKX returns newest first → reverse for chart
+    const candles = data.data.reverse().map(c => ({
+      time: Math.floor(Number(c[0]) / 1000), // seconds
+      open: Number(c[1]),
+      high: Number(c[2]),
+      low: Number(c[3]),
+      close: Number(c[4]),
+      volume: Number(c[5]),
+    }));
+
+    res.json(candles);
+  } catch (err) {
+    console.error("Candles error:", err);
+    res.status(500).json({ error: "Failed to fetch candles" });
+  }
+});
+
 module.exports = router;
