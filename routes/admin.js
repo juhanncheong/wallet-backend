@@ -4,7 +4,6 @@ const User = require("../models/User");
 const Transaction = require("../models/Transaction");
 const ReferralCode = require("../models/ReferralCode");
 const auth = require("../middleware/auth");
-const Coin = require('../models/Coin');
 const isAdmin = require("../middleware/isAdmin");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const RewardGrant = require("../models/RewardGrant");
