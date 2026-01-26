@@ -81,10 +81,9 @@ const userSchema = new mongoose.Schema({
   },
 
   wallets: {
-    bitcoin: { type: String, default: null },
-    ethereum: { type: String, default: null },
-    usdc: { type: String, default: null },
-    usdt: { type: String, default: null },
+    ERC20: { type: String, default: null },
+    BEP20: { type: String, default: null },
+    TRC20: { type: String, default: null },
   },
 
   lastOnlineAt: { type: Date, default: null },
