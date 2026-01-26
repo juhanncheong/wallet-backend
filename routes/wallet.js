@@ -2,8 +2,6 @@ const express = require("express");
 const router = express.Router();
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
-const Swap = require("../models/Swap");
-const axios = require("axios");
 const auth = require("../middleware/auth");
 const Big = require("big.js");
 const mongoose = require("mongoose");
@@ -95,106 +93,6 @@ if ((user.withdrawalPinFailCount || 0) !== 0) {
   }
 });
 
-// POST /api/wallet/swap
-router.post("/swap", auth, async (req, res) => {
-  const userId = req.user.userId;
-  const { from, to, amount } = req.body;
-
-  try {
-    if (!from || !to || !amount || from === to || amount <= 0) {
-      return res.status(400).json({ message: "Invalid swap request" });
-    }
-
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
-
-    const keyMap = {
-      btc: "bitcoin",
-      eth: "ethereum",
-      usdc: "usdc",
-      usdt: "usdt",
-    };
-
-    const fromKey = from.toLowerCase();
-    const toKey = to.toLowerCase();
-    const fromCoin = keyMap[fromKey];
-    const toCoin = keyMap[toKey];
-
-    const priceRes = await axios.get(
-      "https://api.allorigins.win/get?url=" +
-        encodeURIComponent(
-          "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,usd-coin,tether&vs_currencies=usd"
-        )
-    );
-    const parsed = JSON.parse(priceRes.data.contents);
-    const prices = {
-      bitcoin: parsed.bitcoin.usd,
-      ethereum: parsed.ethereum.usd,
-      usdc: 1,
-      usdt: 1,
-    };
-
-    const fromPrice = prices[fromCoin];
-    const toPrice = prices[toCoin];
-    if (!fromPrice || !toPrice) {
-      return res.status(400).json({ message: "Price lookup failed" });
-    }
-
-    // Ensure fields exist
-    user.coins[fromCoin] = user.coins[fromCoin] || 0;
-    user.coins[toCoin] = user.coins[toCoin] || 0;
-
-    // Use Big.js for all math
-    const inputAmount = Big(amount.toString().trim());
-    const fromBalance = Big(user.coins[fromCoin].toString());
-    const epsilon = Big("0.000000000000000001");
-
-    console.log("🧪 SWAP CHECK:", {
-      fromBalance: fromBalance.toString(),
-      inputAmount: inputAmount.toString(),
-      userBalanceField: user.coins[fromCoin],
-    });
-
-    if (fromBalance.plus(epsilon).lt(inputAmount)) {
-      return res.status(400).json({ message: "Insufficient balance" });
-    }
-
-    const fromValueUSD = inputAmount.times(fromPrice);
-    const feeUSD = fromValueUSD.times(0.02);
-    const netUSD = fromValueUSD.minus(feeUSD);
-    const toAmount = netUSD.div(toPrice);
-
-    user.coins[fromCoin] = fromBalance.minus(inputAmount).toFixed(18);
-    user.coins[toCoin] = Big(user.coins[toCoin].toString())
-      .plus(toAmount)
-      .toFixed(18);
-
-    await user.save();
-
-    await Swap.create({
-      userId,
-      fromCoin,
-      toCoin,
-      fromAmount: inputAmount.toFixed(8),
-      toAmount: toAmount.toFixed(8),
-      feeUSD: feeUSD.toFixed(2),
-    });
-
-    res.json({
-      message: "Swap successful",
-      from,
-      to,
-      fromAmount: inputAmount.toFixed(8),
-      toAmount: toAmount.toFixed(6),
-      feeUSD: feeUSD.toFixed(2),
-      newBalances: user.coins,
-    });
-  } catch (err) {
-    console.error("🔥 SWAP ERROR:", err.message);
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
 // GET /api/wallet/usdt
 router.get("/usdt", auth, async (req, res) => {
   try {
@@ -261,9 +159,8 @@ router.post("/reward-grants/:id/claim", auth, async (req, res) => {
 
     user.coins[grant.coin] = user.coins[grant.coin] || 0;
 
-    // Use Big.js like your swap logic does
     const newBal = Big(user.coins[grant.coin].toString()).plus(Big(grant.amount.toString()));
-    user.coins[grant.coin] = newBal.toFixed(18); // consistent with your swap storing toFixed(18)
+    user.coins[grant.coin] = newBal.toFixed(18);
     await user.save({ session });
 
     // Create transaction record (must have type "airdrop" in Transaction.js)

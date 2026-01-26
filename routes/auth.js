@@ -24,11 +24,11 @@ const authMiddleware = (req, res, next) => {
 };
 
 // Reserve 1 address from pool (atomic)
-async function reserveNextAddress({ coin, network, userId, session }) {
+async function reserveNextAddress({ network, userId, session }) {
   const filter = {
-    coin,
     network,
-    $or: [{ status: "available" }, { status: { $exists: false } }], // backward compatible
+    $or: [{ status: "available" }, { status: { $exists: false } }],
+    assignedTo: null,
   };
 
   const update = {
@@ -41,27 +41,22 @@ async function reserveNextAddress({ coin, network, userId, session }) {
 }
 
 async function allocateDepositWallets(userId, session) {
-  // ✅ Decide your networks here (must match what you store in Wallet collection)
   const wanted = [
-    { key: "bitcoin", coin: "bitcoin", network: "Bitcoin" },
-    { key: "ethereum", coin: "ethereum", network: "Ethereum" },
-    { key: "usdc", coin: "usdc", network: "Ethereum" },
-    { key: "usdt", coin: "usdt", network: "Tron" },
+    { key: "ERC20", network: "ERC20" },
+    { key: "BEP20", network: "BEP20" },
+    { key: "TRC20", network: "TRC20" },
   ];
 
   const out = {};
   for (const w of wanted) {
     const doc = await reserveNextAddress({
-      coin: w.coin,
       network: w.network,
       userId,
       session,
     });
 
     if (!doc) {
-      const err = new Error(
-        `No available ${w.coin.toUpperCase()} (${w.network}) deposit address in pool`
-      );
+      const err = new Error(`No available ${w.network} deposit address in pool`);
       err.status = 503;
       err.code = "ADDRESS_POOL_EMPTY";
       err.missing = w.key;
