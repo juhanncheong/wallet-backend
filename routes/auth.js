@@ -113,7 +113,7 @@ router.post("/signup", async (req, res) => {
     await newUser.save({ session });
 
     // ✅ Allocate deposit addresses from pool and attach to user
-    const wallets = await allocateDepositWallets(newUser._id, session);
+    const { allocateDepositWallets } = require("../services/depositAllocator");
     newUser.wallets = wallets;
     await newUser.save({ session });
 

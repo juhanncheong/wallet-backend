@@ -22,6 +22,8 @@ const balancesRoutes = require("./routes/balances");
 const adminBalanceRoutes = require("./routes/adminBalance");
 const tradeRoutes = require("./routes/trade");
 const { startLimitMatcher } = require("./services/limitMatcher");
+const { allocateDepositWallets } = require("./services/depositAllocator");
+
 
 dotenv.config();
 
@@ -95,6 +97,64 @@ function verifyAdmin(req, res, next) {
     res.status(403).send("Invalid token");
   }
 }
+
+app.post("/admin/reallocate-wallets", verifyAdmin, async (req, res) => {
+  const limit = Number(req.body?.limit || 0); // optional: process only N users
+
+  // Find users missing any of the network wallets
+  const filter = {
+    $or: [
+      { "wallets.ERC20": null },
+      { "wallets.BEP20": null },
+      { "wallets.TRC20": null },
+      { wallets: { $exists: false } },
+    ],
+  };
+
+  const users = await User.find(filter).select("_id email username wallets");
+  const target = limit > 0 ? users.slice(0, limit) : users;
+
+  const report = {
+    totalFound: users.length,
+    processed: 0,
+    updated: 0,
+    failed: [],
+  };
+
+  for (const u of target) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+    try {
+      const wallets = await allocateDepositWallets(u._id, session);
+
+      await User.updateOne(
+        { _id: u._id },
+        { $set: { wallets } },
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
+
+      report.processed += 1;
+      report.updated += 1;
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+
+      report.processed += 1;
+      report.failed.push({
+        userId: String(u._id),
+        email: u.email,
+        reason: err.message,
+        code: err.code || null,
+        missing: err.missing || null,
+      });
+    }
+  }
+
+  res.json(report);
+});
 
 // ==========================
 // Legacy /admin endpoints
