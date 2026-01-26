@@ -6,7 +6,7 @@ const Balance = require("../models/Balance");
 const auth = require("../middleware/auth");
 
 // ADMIN: GET /admin/withdrawals
-router.get("/withdrawals", verifyAdmin, async (req, res) => {
+router.get("/withdrawals", async (req, res) => {
   const withdrawals = await Transaction.find({ type: "withdrawal" })
     .populate("userId", "email")
     .sort({ createdAt: -1 });
