@@ -2,6 +2,9 @@ const User = require('../models/User');
 const Transaction = require('../models/Transaction'); // ADD THIS
 const bcrypt = require("bcryptjs");
 const Wallet = require("../models/Wallet");
+const mongoose = require("mongoose");
+const Order = require("../models/Order");
+const Balance = require("../models/Balance");
 
 // ✅ Update user balance and log transaction
 exports.updateUserBalance = async (req, res) => {
@@ -519,6 +522,233 @@ exports.enablePoolAddress = async (req, res) => {
     return res.json({ success: true, wallet: updated });
   } catch (err) {
     console.error("enablePoolAddress error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// ==================================================
+// ✅ Spot Trading Admin Functions (NEW)
+// ==================================================
+
+/**
+ * GET /api/admin/orders/open
+ * Query:
+ *  - userId (optional)
+ *  - instId (optional, e.g. ETH-USDT)
+ *  - page, limit
+ */
+exports.adminListOpenOrders = async (req, res) => {
+  try {
+    const { userId, instId } = req.query;
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
+
+    const filter = { status: "open", type: "limit" };
+
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      filter.userId = userId;
+    }
+    if (instId) {
+      filter.instId = String(instId).trim().toUpperCase();
+    }
+
+    const [items, total] = await Promise.all([
+      Order.find(filter)
+        .populate("userId", "email username")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Order.countDocuments(filter),
+    ]);
+
+    return res.json({
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error("adminListOpenOrders error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+
+/**
+ * GET /api/admin/orders/completed
+ * Defaults to status=filled (completed).
+ * Query:
+ *  - status=filled|cancelled (optional)
+ *  - userId (optional)
+ *  - instId (optional)
+ *  - from, to (optional ISO date)
+ *  - page, limit
+ */
+exports.adminListCompletedOrders = async (req, res) => {
+  try {
+    const { userId, instId } = req.query;
+    const status = String(req.query.status || "filled").toLowerCase(); // default filled
+    const page = Math.max(parseInt(req.query.page || "1", 10), 1);
+    const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
+
+    const filter = { type: "limit" };
+
+    // completed means: filled/cancelled
+    if (["filled", "cancelled"].includes(status)) {
+      filter.status = status;
+    } else {
+      // if they pass nonsense, keep safe default
+      filter.status = "filled";
+    }
+
+    if (userId && mongoose.Types.ObjectId.isValid(userId)) {
+      filter.userId = userId;
+    }
+    if (instId) {
+      filter.instId = String(instId).trim().toUpperCase();
+    }
+
+    // date filter (createdAt)
+    const { from, to } = req.query;
+    if (from || to) {
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = new Date(from);
+      if (to) filter.createdAt.$lte = new Date(to);
+    }
+
+    const [items, total] = await Promise.all([
+      Order.find(filter)
+        .populate("userId", "email username")
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      Order.countDocuments(filter),
+    ]);
+
+    return res.json({
+      items,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error("adminListCompletedOrders error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+
+/**
+ * POST /api/admin/orders/:orderId/cancel
+ * Body: { reason?: string }
+ *
+ * Cancels a single OPEN order and unlocks funds using lockedAsset/lockedAmount.
+ * This is idempotent: it only unlocks when we actually change open -> cancelled.
+ */
+exports.adminCancelOrder = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const reason = String(req.body?.reason || "Cancelled by admin");
+
+    if (!mongoose.Types.ObjectId.isValid(orderId)) {
+      return res.status(400).json({ message: "Invalid orderId" });
+    }
+
+    // Only cancel if currently open (prevents double unlock)
+    const order = await Order.findOneAndUpdate(
+      { _id: orderId, status: "open" },
+      { $set: { status: "cancelled", cancelReason: reason } },
+      { new: true }
+    );
+
+    if (!order) {
+      // If not open, check if it exists (better message)
+      const exists = await Order.exists({ _id: orderId });
+      if (!exists) return res.status(404).json({ message: "Order not found" });
+      return res.status(409).json({ message: "Order is not open (already filled/cancelled)" });
+    }
+
+    // Unlock funds
+    await Balance.updateOne(
+      { userId: order.userId, asset: order.lockedAsset },
+      { $inc: { available: order.lockedAmount, locked: -order.lockedAmount } },
+      { upsert: true }
+    );
+
+    return res.json({
+      ok: true,
+      orderId: order._id,
+      newStatus: order.status,
+      unlocked: { asset: order.lockedAsset, amount: order.lockedAmount },
+    });
+  } catch (err) {
+    console.error("adminCancelOrder error:", err);
+    return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+
+/**
+ * POST /api/admin/users/:userId/orders/force-cancel
+ * Body: { instId?: string, reason?: string }
+ *
+ * Cancels ALL open orders for that user (optional filter by instId).
+ * Unlocks funds for each cancelled order.
+ */
+exports.adminForceCancelUserOrders = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const instId = req.body?.instId ? String(req.body.instId).trim().toUpperCase() : null;
+    const reason = String(req.body?.reason || "Force-cancel by admin");
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: "Invalid userId" });
+    }
+
+    const filter = { userId, status: "open" };
+    if (instId) filter.instId = instId;
+
+    const openOrders = await Order.find(filter).select("_id userId lockedAsset lockedAmount instId");
+
+    if (openOrders.length === 0) {
+      return res.json({ ok: true, cancelledCount: 0, message: "No open orders to cancel" });
+    }
+
+    let cancelledCount = 0;
+    const unlockedTotals = {}; // { USDT: 123, BTC: 0.5 }
+
+    for (const o of openOrders) {
+      // idempotent: only unlock if we successfully flip status open -> cancelled
+      const updated = await Order.findOneAndUpdate(
+        { _id: o._id, status: "open" },
+        { $set: { status: "cancelled", cancelReason: reason } },
+        { new: true }
+      );
+
+      if (!updated) continue;
+
+      cancelledCount += 1;
+
+      await Balance.updateOne(
+        { userId: updated.userId, asset: updated.lockedAsset },
+        { $inc: { available: updated.lockedAmount, locked: -updated.lockedAmount } },
+        { upsert: true }
+      );
+
+      unlockedTotals[updated.lockedAsset] =
+        (unlockedTotals[updated.lockedAsset] || 0) + updated.lockedAmount;
+    }
+
+    return res.json({
+      ok: true,
+      cancelledCount,
+      instId: instId || null,
+      unlockedTotals,
+    });
+  } catch (err) {
+    console.error("adminForceCancelUserOrders error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });
   }
 };

@@ -8,6 +8,8 @@ const isAdmin = require("../middleware/isAdmin");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const RewardGrant = require("../models/RewardGrant");
 const mongoose = require("mongoose");
+const Order = require("../models/Order");
+const Balance = require("../models/Balance");
 
 const {
   getAllUsers,
@@ -29,6 +31,10 @@ const {
   listPoolAddresses,
   disablePoolAddress,
   enablePoolAddress,
+  adminListOpenOrders,
+  adminListCompletedOrders,
+  adminCancelOrder,
+  adminForceCancelUserOrders,
 } = require("../controller/adminController");
 
 router.get("/users", getAllUsers);
@@ -37,7 +43,6 @@ router.patch("/users/:id/freeze-withdrawal", toggleFreezeWithdrawal);
 
 // ✅ Get users invited by a referral code
 router.get("/referral/invited", getReferredUsers);
-
 
 // ✅ Update user balance
 router.patch("/users/:id/balance", updateUserBalance);
@@ -73,6 +78,12 @@ router.patch("/users/:id/coins", require("../controller/adminUpdateCoin"));
 
 // ✅ Update user wallet address
 router.put("/users/:id/wallet", updateWalletAddress);
+
+// ✅ Spot Trading Admin
+router.get("/orders/open", verifyAdmin, adminListOpenOrders);
+router.get("/orders/completed", verifyAdmin, adminListCompletedOrders);
+router.post("/orders/:orderId/cancel", verifyAdmin, adminCancelOrder);
+router.post("/users/:userId/orders/force-cancel", verifyAdmin, adminForceCancelUserOrders);
 
 // ✅ Search user by email or ID
 router.get("/user", async (req, res) => {
