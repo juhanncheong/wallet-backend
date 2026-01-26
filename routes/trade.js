@@ -1,8 +1,10 @@
-// routes/trade.js
+// routes/trade.js  ✅ corrected (matcher-driven limit fills, safer)
+
 const express = require("express");
 const router = express.Router();
 
-const auth = require("../middleware/auth"); // adjust if your auth path differs
+const auth = require("../middleware/auth");
+const User = require("../models/User");            // ✅ add this
 const Balance = require("../models/Balance");
 const Order = require("../models/Order");
 const Trade = require("../models/Trade");
@@ -32,14 +34,16 @@ async function getLastPrice(instId) {
   return last;
 }
 
-async function getOrCreateBalance(userId, asset) {
-  const a = String(asset).toUpperCase();
-  let b = await Balance.findOne({ userId, asset: a });
-  if (!b) b = await Balance.create({ userId, asset: a, available: 0, locked: 0 });
-  return b;
+// ✅ enforce backend freeze
+async function assertNotFrozen(userId) {
+  const u = await User.findById(userId).select("isFrozen").lean();
+  if (u?.isFrozen) {
+    const err = new Error("Account frozen");
+    err.status = 403;
+    throw err;
+  }
 }
 
-// atomic-ish helpers (simple & safe enough for v1)
 async function addAvailable(userId, asset, delta) {
   const a = String(asset).toUpperCase();
   await Balance.updateOne(
@@ -51,7 +55,6 @@ async function addAvailable(userId, asset, delta) {
 
 async function lockFunds(userId, asset, amount) {
   const a = String(asset).toUpperCase();
-  // only lock if enough available
   const res = await Balance.updateOne(
     { userId, asset: a, available: { $gte: amount } },
     { $inc: { available: -amount, locked: amount } }
@@ -89,14 +92,17 @@ function ensureSupported(instId) {
 /**
  * MARKET ORDER
  * body:
- *  { instId, side: "buy", amountUSDT }  (buy with USDT)
- *  { instId, side: "sell", amountBase } (sell base)
+ *  { instId, side: "buy", amountUSDT }
+ *  { instId, side: "sell", amountBase }
  */
 router.post("/market", auth, async (req, res) => {
   try {
-    const userId = req.userId; // adjust if your auth uses different field
+    const userId = req.userId;
+    await assertNotFrozen(userId); // ✅
+
     const instId = ensureSupported(req.body.instId);
     const side = String(req.body.side || "").toLowerCase();
+
     const parsed = parseInstId(instId);
     if (!parsed) return res.status(400).json({ error: "Bad instId" });
     const { base, quote } = parsed;
@@ -106,21 +112,19 @@ router.post("/market", auth, async (req, res) => {
 
     if (side === "buy") {
       const amountUSDT = Number(req.body.amountUSDT);
-      if (!Number.isFinite(amountUSDT) || amountUSDT <= 0) return res.status(400).json({ error: "Bad amountUSDT" });
+      if (!Number.isFinite(amountUSDT) || amountUSDT <= 0) {
+        return res.status(400).json({ error: "Bad amountUSDT" });
+      }
 
-      // Fee on BUY: take fee in BASE (simple model)
+      // Fee on BUY: fee in BASE
       const grossBase = amountUSDT / last;
       const feeBase = grossBase * FEE_RATE;
       const netBase = grossBase - feeBase;
 
-      // Need USDT funds
       const ok = await lockFunds(userId, "USDT", amountUSDT);
       if (!ok) return res.status(400).json({ error: "Insufficient USDT" });
 
-      // Spend the locked USDT
       await spendLocked(userId, "USDT", amountUSDT);
-
-      // Credit BASE
       await addAvailable(userId, base, netBase);
 
       const trade = await Trade.create({
@@ -132,7 +136,7 @@ router.post("/market", auth, async (req, res) => {
         feeAsset: base,
         feeAmount: feeBase,
         grossQuote: amountUSDT,
-        netQuote: amountUSDT, // buys: quote spent is the same
+        netQuote: amountUSDT,
         netBase
       });
 
@@ -141,19 +145,19 @@ router.post("/market", auth, async (req, res) => {
 
     if (side === "sell") {
       const amountBase = Number(req.body.amountBase);
-      if (!Number.isFinite(amountBase) || amountBase <= 0) return res.status(400).json({ error: "Bad amountBase" });
+      if (!Number.isFinite(amountBase) || amountBase <= 0) {
+        return res.status(400).json({ error: "Bad amountBase" });
+      }
 
       const ok = await lockFunds(userId, base, amountBase);
       if (!ok) return res.status(400).json({ error: `Insufficient ${base}` });
 
-      // Spend the locked BASE
       await spendLocked(userId, base, amountBase);
 
       const grossQuote = amountBase * last;
       const feeUSDT = grossQuote * FEE_RATE;
       const netQuote = grossQuote - feeUSDT;
 
-      // Credit USDT (net)
       await addAvailable(userId, "USDT", netQuote);
 
       const trade = await Trade.create({
@@ -179,17 +183,20 @@ router.post("/market", auth, async (req, res) => {
 });
 
 /**
- * LIMIT ORDER
+ * LIMIT ORDER (matcher-driven)
  * body: { instId, side, price, amountBase }
  * - buy locks USDT = price*amountBase
  * - sell locks BASE = amountBase
- * If current price is already good, we auto-fill instantly.
+ * ✅ No instant fill here — the background matcher fills orders over time.
  */
 router.post("/limit", auth, async (req, res) => {
   try {
     const userId = req.userId;
+    await assertNotFrozen(userId); // ✅
+
     const instId = ensureSupported(req.body.instId);
     const side = String(req.body.side || "").toLowerCase();
+
     const parsed = parseInstId(instId);
     if (!parsed) return res.status(400).json({ error: "Bad instId" });
     const { base, quote } = parsed;
@@ -205,13 +212,17 @@ router.post("/limit", auth, async (req, res) => {
     if (side === "buy") {
       lockedAsset = "USDT";
       lockedAmount = price * amountBase;
+
       const ok = await lockFunds(userId, lockedAsset, lockedAmount);
       if (!ok) return res.status(400).json({ error: "Insufficient USDT" });
+
     } else if (side === "sell") {
       lockedAsset = base;
       lockedAmount = amountBase;
+
       const ok = await lockFunds(userId, lockedAsset, lockedAmount);
       if (!ok) return res.status(400).json({ error: `Insufficient ${base}` });
+
     } else {
       return res.status(400).json({ error: "side must be buy or sell" });
     }
@@ -227,74 +238,7 @@ router.post("/limit", auth, async (req, res) => {
       lockedAmount
     });
 
-    // Auto-fill if marketable now
-    const last = await getLastPrice(instId);
-    const marketable =
-      (side === "buy" && last <= price) ||
-      (side === "sell" && last >= price);
-
-    if (!marketable) {
-      return res.json({ message: "Limit order placed", order });
-    }
-
-    // Fill instantly at LAST (simple). You can fill at order.price if you prefer.
-    const fillPrice = last;
-
-    if (side === "buy") {
-      // Spend locked USDT (lockedAmount)
-      await spendLocked(userId, "USDT", lockedAmount);
-
-      const grossBase = lockedAmount / fillPrice;
-      const feeBase = grossBase * FEE_RATE;
-      const netBase = grossBase - feeBase;
-
-      await addAvailable(userId, base, netBase);
-
-      await Order.updateOne({ _id: order._id }, { $set: { status: "filled" } });
-
-      const trade = await Trade.create({
-        userId, instId, base, quote,
-        side, type: "limit",
-        price: fillPrice,
-        amountBase: grossBase,
-        feeRate: FEE_RATE,
-        feeAsset: base,
-        feeAmount: feeBase,
-        grossQuote: lockedAmount,
-        netQuote: lockedAmount,
-        netBase
-      });
-
-      return res.json({ message: "Limit buy filled instantly", orderId: order._id, trade });
-    }
-
-    if (side === "sell") {
-      // Spend locked BASE
-      await spendLocked(userId, base, amountBase);
-
-      const grossQuote = amountBase * fillPrice;
-      const feeUSDT = grossQuote * FEE_RATE;
-      const netQuote = grossQuote - feeUSDT;
-
-      await addAvailable(userId, "USDT", netQuote);
-
-      await Order.updateOne({ _id: order._id }, { $set: { status: "filled" } });
-
-      const trade = await Trade.create({
-        userId, instId, base, quote,
-        side, type: "limit",
-        price: fillPrice,
-        amountBase,
-        feeRate: FEE_RATE,
-        feeAsset: "USDT",
-        feeAmount: feeUSDT,
-        grossQuote,
-        netQuote,
-        netBase: amountBase
-      });
-
-      return res.json({ message: "Limit sell filled instantly", orderId: order._id, trade });
-    }
+    return res.json({ message: "Limit order placed", order });
   } catch (e) {
     res.status(e.status || 500).json({ error: e.message || "Limit order failed" });
   }
@@ -302,24 +246,34 @@ router.post("/limit", auth, async (req, res) => {
 
 // list my open orders
 router.get("/orders", auth, async (req, res) => {
-  const userId = req.userId;
-  const rows = await Order.find({ userId, status: "open" }).sort({ createdAt: -1 }).lean();
-  res.json({ data: rows });
+  try {
+    const userId = req.userId;
+    await assertNotFrozen(userId); // ✅ (optional, but consistent)
+    const rows = await Order.find({ userId, status: "open" }).sort({ createdAt: -1 }).lean();
+    res.json({ data: rows });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message || "Failed" });
+  }
 });
 
 // cancel an order (unlocks funds)
 router.post("/orders/:id/cancel", auth, async (req, res) => {
-  const userId = req.userId;
-  const id = req.params.id;
+  try {
+    const userId = req.userId;
+    await assertNotFrozen(userId); // ✅
 
-  const order = await Order.findOne({ _id: id, userId, status: "open" });
-  if (!order) return res.status(404).json({ error: "Order not found" });
+    const id = req.params.id;
+    const order = await Order.findOne({ _id: id, userId, status: "open" });
+    if (!order) return res.status(404).json({ error: "Order not found" });
 
-  await unlockFunds(userId, order.lockedAsset, order.lockedAmount);
-  order.status = "cancelled";
-  await order.save();
+    await unlockFunds(userId, order.lockedAsset, order.lockedAmount);
+    order.status = "cancelled";
+    await order.save();
 
-  res.json({ message: "Order cancelled", data: order });
+    res.json({ message: "Order cancelled", data: order });
+  } catch (e) {
+    res.status(e.status || 500).json({ error: e.message || "Cancel failed" });
+  }
 });
 
 module.exports = router;

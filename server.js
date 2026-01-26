@@ -21,6 +21,7 @@ const marketsRoutes = require("./routes/markets");
 const balancesRoutes = require("./routes/balances");
 const adminBalanceRoutes = require("./routes/adminBalance");
 const tradeRoutes = require("./routes/trade");
+const { startLimitMatcher } = require("./services/limitMatcher");
 
 dotenv.config();
 
@@ -55,6 +56,8 @@ mongoose
   })
   .then(() => console.log("MongoDB Connected"))
   .catch((err) => console.error(err));
+
+startLimitMatcher({ intervalMs: 1500 });
 
 // ==========================
 // Admin Auth (keep if used)
