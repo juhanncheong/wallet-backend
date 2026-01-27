@@ -312,14 +312,13 @@ async function fetchCandles(instId, bar, limit, after, before) {
 router.get("/candles", async (req, res) => {
   try {
     const instId = String(req.query.instId || "").toUpperCase();
-    const bar = String(req.query.bar || "5m"); // 1m, 5m, 15m, 1H, 4H, 1D, etc.
+    const bar = String(req.query.bar || "5m");
 
     const limit = Math.max(
       10,
       Math.min(parseInt(req.query.limit || "300", 10) || 300, 1000)
     );
 
-    // Optional paging support
     const after = req.query.after ? Number(req.query.after) : null;
     const before = req.query.before ? Number(req.query.before) : null;
 
@@ -327,16 +326,20 @@ router.get("/candles", async (req, res) => {
       return res.status(400).json({ error: "Bad instId" });
     }
 
-    // Very light validation for bar (so nobody sends garbage)
-    const okBar = /^[0-9]+(m|H|D|W|M)$/.test(bar); // examples: 1m, 5m, 1H, 1D
+    const okBar = /^[0-9]+(m|H|D|W|M)$/.test(bar);
     if (!okBar) {
       return res.status(400).json({ error: "Bad bar" });
     }
 
     const data = await fetchCandles(instId, bar, limit, after, before);
-    res.json({ data });
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
+    return res.json({ data });
   } catch (e) {
-    res.status(500).json({ error: "Failed to fetch OKX candles" });
+    return res.status(500).json({ error: "Failed to fetch OKX candles" });
   }
 });
 
