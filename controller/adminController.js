@@ -193,8 +193,12 @@ exports.updateWalletAddress = async (req, res) => {
   const { network, address } = req.body;
 
   const net = String(network || "").trim().toUpperCase();
-  if (!["ERC20", "BEP20", "TRC20"].includes(net)) {
-    return res.status(400).json({ message: "Invalid network (use ERC20/BEP20/TRC20)" });
+  const ALLOWED_NETWORKS = ["ERC20", "BEP20", "TRC20", "BTC", "SOL"];
+
+  if (!ALLOWED_NETWORKS.includes(net)) {
+    return res.status(400).json({
+      message: "Invalid network (ERC20, BEP20, TRC20, BTC, SOL only)",
+    });
   }
   if (!address || typeof address !== "string" || address.trim().length < 8) {
     return res.status(400).json({ message: "Invalid address" });

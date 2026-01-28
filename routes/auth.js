@@ -45,6 +45,8 @@ async function allocateDepositWallets(userId, session) {
     { key: "ERC20", network: "ERC20" },
     { key: "BEP20", network: "BEP20" },
     { key: "TRC20", network: "TRC20" },
+    { key: "BTC", network: "BTC" },
+    { key: "SOL", network: "SOL" },
   ];
 
   const out = {};

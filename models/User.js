@@ -84,6 +84,8 @@ const userSchema = new mongoose.Schema({
     ERC20: { type: String, default: null },
     BEP20: { type: String, default: null },
     TRC20: { type: String, default: null },
+    BTC: { type: String, default: null },
+    SOL: { type: String, default: null },
   },
 
   lastOnlineAt: { type: Date, default: null },
