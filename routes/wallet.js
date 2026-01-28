@@ -11,7 +11,7 @@ const rewardGrantRoutes = require("./rewardGrants");
 
 // POST /api/wallet/withdraw
 router.post("/withdraw", auth, async (req, res) => {
-  const { coin, amount, pin, address } = req.body; // ✅ include address
+  const { coin, amount, pin, address, network } = req.body;
   const userId = req.user.userId;
 
   try {
@@ -100,6 +100,7 @@ if (!updatedBal) {
       amount: amt,
       status: "pending",
       address,
+      network: String(network || "").trim(),
     });
 
     res.json({ message: "Withdrawal request submitted" });
