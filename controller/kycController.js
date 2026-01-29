@@ -39,11 +39,19 @@ exports.submitKyc = async (req, res) => {
     kyc.dob = new Date(dob);
     kyc.country = country;
 
-    kyc.files = {
-      idFront: req.files.idFront[0],
-      idBack: req.files.idBack[0],
-      selfie: req.files.selfie[0],
-    };
+    const toFileMeta = (f) => ({
+     path: f.path,
+     mime: f.mimetype,
+     size: f.size,
+     originalName: f.originalname,
+     uploadedAt: new Date(),
+   });
+
+   kyc.files = {
+     idFront: toFileMeta(req.files.idFront[0]),
+     idBack: toFileMeta(req.files.idBack[0]),
+     selfie: toFileMeta(req.files.selfie[0]),
+   };
 
     kyc.status = "SUBMITTED";
     kyc.submittedAt = new Date();
@@ -57,6 +65,6 @@ exports.submitKyc = async (req, res) => {
     res.json({ message: "KYC submitted successfully" });
   } catch (err) {
     console.error("KYC submit error:", err);
-    res.status(500).json({ message: "Failed to submit KYC" });
+    return res.status(500).json({ message: err.message || "Failed to submit KYC" });
   }
 };
