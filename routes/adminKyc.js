@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const verifyAdmin = require("../middleware/verifyAdmin");
-const ctrl = require("../controllers/adminKycController");
+const ctrl = require("../controller/adminKycController");
 
 router.get("/", verifyAdmin, ctrl.listKyc);
 router.get("/:id", verifyAdmin, ctrl.getKyc);
