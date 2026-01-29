@@ -22,6 +22,8 @@ const balancesRoutes = require("./routes/balances");
 const adminBalanceRoutes = require("./routes/adminBalance");
 const tradeRoutes = require("./routes/trade");
 const { startLimitMatcher } = require("./services/limitMatcher");
+const kycRoutes = require("./routes/kyc");
+const adminKycRoutes = require("./routes/adminKyc");
 
 dotenv.config();
 
@@ -47,6 +49,8 @@ app.use("/api/admin", adminBalanceRoutes);
 
 // ✅ Other admin routes (keep, but make sure they DON'T touch old User.coins/user.balance coin logic)
 app.use("/api/admin", adminRoutes);
+app.use("/api/kyc", kycRoutes);
+app.use("/api/admin/kyc", adminKycRoutes);
 
 // ✅ MongoDB connection
 mongoose
