@@ -409,6 +409,15 @@ function startLoop(instId) {
           // Override active: walk price from startPrice -> fixedPrice over FULL duration
           const target = Number(ov.fixedPrice);
 
+          console.log("[OV] doc", {
+  instId,
+  fixedPrice: ov.fixedPrice,
+  startPrice: ov.startPrice,
+  startAt: ov.startAt,
+  endAt: ov.endAt,
+});
+console.log("[OV] live(before)", overrideLive.get(instId));
+
          // Seed startPrice ONCE so first candle doesn't jump
          let start = Number(ov.startPrice);
          if (!Number.isFinite(start)) {
@@ -452,6 +461,7 @@ function startLoop(instId) {
           const p = getDynamicOverridePrice(instId, base, ov);
 
           await recordSyntheticTick(instId, p, ov.wickPct);
+console.log("[OV] tick", { instId, start, target, base, p });
 
           const t = {
             instId,
