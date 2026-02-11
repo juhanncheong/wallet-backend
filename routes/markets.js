@@ -780,14 +780,16 @@ router.get("/candles", async (req, res) => {
 
     // Overlay synthetic candles (persisted 1m) onto cloned OKX candles for NEX
     if (requestedInstId === "NEX-USDT" && data?.candles?.length) {
-      const firstOkxSec = data.candles[0].time;
-      const lastOkxSec  = data.candles[data.candles.length - 1].time;
+      // Always load synthetic from recent history window
+       const nowSec = Math.floor(Date.now() / 1000);
 
-      // align to minute boundary
-      const startSec = firstOkxSec - (firstOkxSec % 60);
-      const endSec   = lastOkxSec - (lastOkxSec % 60);
+      // Load last 2000 minutes (safe buffer)
+       const startSec = nowSec - (60 * 2000);
+       const endSec = nowSec;
 
       const syn1m = await loadSynthetic1m("NEX-USDT", startSec, endSec);
+
+       console.log("Synthetic count:", syn1m.length);
 
       if (syn1m.length) {
         const synAgg =
