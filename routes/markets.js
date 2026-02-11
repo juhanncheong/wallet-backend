@@ -55,6 +55,7 @@ async function recordSyntheticTick(instId, price, wickPct = 0.001) {
 
   // upsert candle into Mongo (keeps open on first insert, updates high/low/close)
   await SyntheticCandle.updateOne(
+    
     { instId, tf: "1m", t: bucketSec },
     {
       $setOnInsert: { o: c.o, v: 0 },
@@ -412,7 +413,7 @@ function startLoop(instId) {
          let start = Number(ov.startPrice);
          if (!Number.isFinite(start)) {
            const cached = overrideLive.get(instId)?.price;
-           if (Number.isFinite(cached)) start = cached;
+           if (Number.isFinite(cached) && cached > 1) start = cached;
 
            if (!Number.isFinite(start)) {
              try {
@@ -424,10 +425,17 @@ function startLoop(instId) {
            if (!Number.isFinite(start)) start = target;
 
            await MarketOverride.updateOne(
+            
              { instId, isActive: true },
              { $set: { startPrice: start } }
            ).catch(() => {});
          }
+
+         // ✅ Reset micro-state when a NEW override session starts (prevents old state spikes)
+         const live = overrideLive.get(instId);
+           if (!live?.ovStartAt || live.ovStartAt !== String(ov.startAt)) {
+            overrideLive.set(instId, { price: start, dir: 1, ovStartAt: String(ov.startAt) });
+          }
 
           // Progress across the whole override window (minutes)
           const t0 = ov.startAt ? new Date(ov.startAt).getTime() : now;
