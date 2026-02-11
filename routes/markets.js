@@ -776,7 +776,7 @@ router.get("/candles", async (req, res) => {
 
     // Overlay synthetic candles (persisted 1m) onto cloned OKX candles for NEX
     if (requestedInstId === "NEX-USDT" && data?.candles?.length) {
-      const startSec = data.candles[0].time - (data.candles[0].time % 60);
+      const startSec = 0;
 
       const lastOkxSec = data.candles[data.candles.length - 1].time;
       const nowSec = Math.floor(Date.now() / 1000 / 60) * 60;
