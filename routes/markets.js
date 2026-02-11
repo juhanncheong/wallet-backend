@@ -10,25 +10,29 @@ const pairMapping = require("../config/pairMapping");
 const MarketOverride = require("../models/MarketOverride");
 const SyntheticCandle = require("../models/SyntheticCandle");
 
-const candleMem = new Map(); // instId -> { t, o,h,l,c, v }
-const lastDbWrite = new Map(); // instId -> ms
+const candleMem = new Map();
+const lastDbWrite = new Map();
+const lastDbBucket = new Map();
 
 function round2(x) {
   return Math.round(x * 100) / 100;
 }
 
 async function recordSyntheticTick(instId, price, wickPct = 0.001) {
-  // store only NEX
   if (instId !== "NEX-USDT") return;
 
   const nowMs = Date.now();
-  const bucketSec = Math.floor(nowMs / 1000 / 60) * 60; // 1m bucket start in seconds
+  const bucketSec = Math.floor(nowMs / 1000 / 60) * 60; // 1m bucket start
   const p = round2(Number(price));
   if (!Number.isFinite(p) || p <= 0) return;
 
-  // update in-memory current candle
+  // -----------------------------
+  // 1️⃣ Update in-memory candle
+  // -----------------------------
   let c = candleMem.get(instId);
+
   if (!c || c.t !== bucketSec) {
+    // New minute bucket
     c = { instId, tf: "1m", t: bucketSec, o: p, h: p, l: p, c: p, v: 0 };
     candleMem.set(instId, c);
   } else {
@@ -37,28 +41,49 @@ async function recordSyntheticTick(instId, price, wickPct = 0.001) {
     c.c = p;
   }
 
-  // ✅ fake volume per tick (small random)
+  // -----------------------------
+  // 2️⃣ Fake volume
+  // -----------------------------
   const addV = 1 + Math.floor(Math.random() * 5);
   c.v = (c.v ?? 0) + addV;
 
-  // add tiny “natural” wick noise so it doesn't look dead-flat
+  // -----------------------------
+  // 3️⃣ Small natural wick
+  // -----------------------------
   const wiggle = Math.max(0, p * Number(wickPct || 0));
   if (wiggle > 0) {
     c.h = Math.max(c.h, round2(p + Math.random() * wiggle));
     c.l = Math.min(c.l, round2(p - Math.random() * wiggle));
   }
 
-  // throttle DB writes (every ~2s per instId)
-  const last = lastDbWrite.get(instId) || 0;
-  if (nowMs - last < 2000) return;
+  // -----------------------------
+  // 4️⃣ Smart throttle logic
+  // -----------------------------
+  const prevBucket = lastDbBucket.get(instId);
+  const lastWrite = lastDbWrite.get(instId) || 0;
+
+  let shouldWrite = false;
+
+  if (prevBucket !== bucketSec) {
+    // 🔥 Always write immediately for new minute
+    shouldWrite = true;
+    lastDbBucket.set(instId, bucketSec);
+  } else if (nowMs - lastWrite >= 2000) {
+    // Same minute → throttle to 2s
+    shouldWrite = true;
+  }
+
+  if (!shouldWrite) return;
+
   lastDbWrite.set(instId, nowMs);
 
-  // upsert candle into Mongo (keeps open on first insert, updates high/low/close)
+  // -----------------------------
+  // 5️⃣ Upsert into Mongo
+  // -----------------------------
   await SyntheticCandle.updateOne(
-    
     { instId, tf: "1m", t: bucketSec },
     {
-      $setOnInsert: { o: c.o, v: 0 },
+      $setOnInsert: { o: c.o },
       $max: { h: c.h },
       $min: { l: c.l },
       $set: { c: c.c },
