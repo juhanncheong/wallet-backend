@@ -8,6 +8,164 @@ const fetchFn =
 
 const pairMapping = require("../config/pairMapping");
 const MarketOverride = require("../models/MarketOverride");
+const SyntheticCandle = require("../models/SyntheticCandle");
+
+const candleMem = new Map(); // instId -> { t, o,h,l,c, v }
+const lastDbWrite = new Map(); // instId -> ms
+
+function round2(x) {
+  return Math.round(x * 100) / 100;
+}
+
+async function recordSyntheticTick(instId, price, wickPct = 0.001) {
+  // store only NEX
+  if (instId !== "NEX-USDT") return;
+
+  const nowMs = Date.now();
+  const bucketSec = Math.floor(nowMs / 1000 / 60) * 60; // 1m bucket start in seconds
+  const p = round2(Number(price));
+  if (!Number.isFinite(p) || p <= 0) return;
+
+  // update in-memory current candle
+  let c = candleMem.get(instId);
+  if (!c || c.t !== bucketSec) {
+    c = { instId, tf: "1m", t: bucketSec, o: p, h: p, l: p, c: p, v: 0 };
+    candleMem.set(instId, c);
+  } else {
+    c.h = Math.max(c.h, p);
+    c.l = Math.min(c.l, p);
+    c.c = p;
+  }
+
+  // add tiny “natural” wick noise so it doesn't look dead-flat
+  const wiggle = Math.max(0, p * Number(wickPct || 0));
+  if (wiggle > 0) {
+    c.h = Math.max(c.h, round2(p + Math.random() * wiggle));
+    c.l = Math.min(c.l, round2(p - Math.random() * wiggle));
+  }
+
+  // throttle DB writes (every ~2s per instId)
+  const last = lastDbWrite.get(instId) || 0;
+  if (nowMs - last < 2000) return;
+  lastDbWrite.set(instId, nowMs);
+
+  // upsert candle into Mongo (keeps open on first insert, updates high/low/close)
+  await SyntheticCandle.updateOne(
+    { instId, tf: "1m", t: bucketSec },
+    {
+      $setOnInsert: { o: c.o, v: 0 },
+      $max: { h: c.h },
+      $min: { l: c.l },
+      $set: { c: c.c },
+    },
+    { upsert: true }
+  ).catch(() => {});
+}
+
+// In-memory micro price state for override (random walk)
+const overrideLive = new Map(); // instId -> { price, dir }
+
+function clamp(x, a, b) {
+  return Math.max(a, Math.min(b, x));
+}
+
+function barToSec(bar) {
+  const b = String(bar);
+  if (b === "1m") return 60;
+  if (b === "15m") return 900;
+  if (b === "1H" || b === "1h") return 3600;
+  if (b === "4H" || b === "4h") return 14400;
+  if (b === "1D" || b === "1d") return 86400;
+  return 60;
+}
+
+function aggregateCandlesFrom1m(oneMinCandles, barSec) {
+  // input candles must be sorted ASC by time (seconds)
+  const out = [];
+  let cur = null;
+
+  for (const c of oneMinCandles) {
+    const bucket = c.time - (c.time % barSec);
+    if (!cur || cur.time !== bucket) {
+      if (cur) out.push(cur);
+      cur = {
+        time: bucket,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+        volume: (c.volume ?? 0),
+      };
+    } else {
+      cur.high = Math.max(cur.high, c.high);
+      cur.low = Math.min(cur.low, c.low);
+      cur.close = c.close;
+      cur.volume = (cur.volume ?? 0) + (c.volume ?? 0);
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+async function loadSynthetic1m(instId, startSec, endSec) {
+  // Only NEX has synthetics
+  if (instId !== "NEX-USDT") return [];
+
+  const docs = await SyntheticCandle.find(
+    { instId, tf: "1m", t: { $gte: startSec, $lte: endSec } },
+    { _id: 0, t: 1, o: 1, h: 1, l: 1, c: 1, v: 1 }
+  )
+    .sort({ t: 1 })
+    .lean();
+
+  return docs.map(d => ({
+    time: d.t,
+    open: d.o,
+    high: d.h,
+    low: d.l,
+    close: d.c,
+    volume: d.v ?? 0,
+  }));
+}
+
+function overlayCandles(baseCandles, syntheticCandles) {
+  // replace base candles by timestamp if synthetic has that bucket
+  const m = new Map(baseCandles.map(c => [c.time, c]));
+  for (const sc of syntheticCandles) m.set(sc.time, sc);
+  return Array.from(m.values()).sort((a, b) => a.time - b.time);
+}
+
+// Returns a dynamic price within [base, base + band] using a random walk
+function getDynamicOverridePrice(instId, base, band) {
+  const key = instId;
+  const min = base;
+  const max = base + band;
+
+  let st = overrideLive.get(key);
+  if (!st || !Number.isFinite(st.price)) {
+    st = { price: base, dir: 1 };
+  }
+
+  // step size: 0.01–0.06 (1–6 cents) per tick feels alive
+  const step = (Math.random() * 0.05) + 0.01;
+
+  // random direction flips sometimes
+  if (Math.random() < 0.25) st.dir *= -1;
+
+  let next = st.price + st.dir * step;
+
+  // bounce off edges
+  if (next >= max) { next = max; st.dir = -1; }
+  if (next <= min) { next = min; st.dir = 1; }
+
+  // keep 2 decimals
+  next = Math.round(next * 100) / 100;
+
+  st.price = clamp(next, min, max);
+  overrideLive.set(key, st);
+
+  return st.price;
+}
 
 function mapToOkxInstId(requestedInstId) {
   return pairMapping[requestedInstId] || requestedInstId;
@@ -232,7 +390,9 @@ function startLoop(instId) {
     try {
       if (doTicker) {
         if (ov) {
-          const p = Number(ov.fixedPrice);
+          const base = Number(ov.fixedPrice);
+          const p = getDynamicOverridePrice(instId, base, 0.50); // 50 cents band
+          await recordSyntheticTick(instId, p, ov.wickPct);
           const t = {
             instId,
             last: String(p),
@@ -241,6 +401,22 @@ function startLoop(instId) {
             low24h: String(p),
             volCcy24h: "0",
           };
+
+          const blend = await getBlendState(instId);
+           if (blend) {
+             const base = Number(blend.doc.fixedPrice);         // override base
+             const from = clamp(base + 0.25, base, base + 0.50); // start near middle of band
+             const to = Number(t.last);                         // OKX current last
+             const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
+             const p = round2(from + (to - from) * k);
+
+             await recordSyntheticTick(instId, p, blend.doc.wickPct);
+
+             // overwrite ticker last with blended p so UI matches candles
+             t.last = String(p);
+             t.open24h = t.open24h ?? String(p);
+           }
+
           lastTickerAt = now;
           for (const res of e.clients) sseSend(res, "ticker", t);
         } else {
@@ -260,7 +436,8 @@ function startLoop(instId) {
         b.instId = instId;
 
         if (ov) {
-          const p = Number(ov.fixedPrice);
+          const base = Number(ov.fixedPrice);
+          const p = getDynamicOverridePrice(instId, base, 0.50);
           const bestBid = Number(b?.bids?.[0]?.[0]);
           const bestAsk = Number(b?.asks?.[0]?.[0]);
           if (Number.isFinite(bestBid) && Number.isFinite(bestAsk) && bestBid > 0 && bestAsk > 0) {
@@ -393,6 +570,26 @@ async function getActiveOverride(instId) {
   return doc;
 }
 
+async function getBlendState(instId) {
+  if (instId !== "NEX-USDT") return null;
+
+  // last known override doc (even if inactive)
+  const doc = await MarketOverride.findOne({ instId: "NEX-USDT" }).lean();
+  if (!doc?.endAt || !doc?.startAt) return null;
+
+  const endMs = new Date(doc.endAt).getTime();
+  const nowMs = Date.now();
+  if (nowMs <= endMs) return null;
+
+  const blendMin = Number(doc.blendMinutes || 5);
+  const blendMs = blendMin * 60 * 1000;
+
+  // only blend within window
+  if (nowMs > endMs + blendMs) return null;
+
+  return { doc, endMs, nowMs, blendMs };
+}
+
 // ✅ GET /api/markets/candles?instId=BTC-USDT&bar=5m&limit=300
 router.get("/candles", async (req, res) => {
   try {
@@ -417,43 +614,27 @@ router.get("/candles", async (req, res) => {
       return res.status(400).json({ error: "Bad bar" });
     }
 
-    // If admin override is active for NEX-USDT, return override candles (no OKX call)
-    const ov = await getActiveOverride(requestedInstId);
-    if (ov) {
-      const price = Number(ov.fixedPrice);
-      const wickPct = Number(ov.wickPct || 0.001);
-      const nowSec = Math.floor(Date.now() / 1000);
-
-      const barSec =
-        bar === "1m" ? 60 :
-        bar === "15m" ? 900 :
-        (bar === "1H" || bar === "1h") ? 3600 :
-        (bar === "4H" || bar === "4h") ? 14400 :
-        (bar === "1D" || bar === "1d") ? 86400 :
-        60;
-
-      const end = nowSec - (nowSec % barSec);
-      const out = [];
-
-      for (let i = limit - 1; i >= 0; i--) {
-        const t = end - i * barSec;
-        const wiggle = price * wickPct;
-        const high = price + (Math.random() * wiggle);
-        const low = price - (Math.random() * wiggle);
-
-        out.push({ time: t, open: price, high, low, close: price, volume: 0 });
-      }
-
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-
-      return res.json({ data: { instId: requestedInstId, bar, candles: out } });
-    }
-
     const data = await fetchCandles(okxInstId, bar, limit, after, before);
     data.instId = requestedInstId;
 
+     const barSec = barToSec(bar);
+
+    // Overlay synthetic candles (persisted 1m) onto cloned OKX candles for NEX
+    if (requestedInstId === "NEX-USDT" && data?.candles?.length) {
+      const startSec = data.candles[0].time - (data.candles[0].time % 60);
+      const endSec = data.candles[data.candles.length - 1].time;
+
+      const syn1m = await loadSynthetic1m("NEX-USDT", startSec, endSec);
+
+      if (syn1m.length) {
+        const synAgg =
+          barSec === 60 ? syn1m : aggregateCandlesFrom1m(syn1m, barSec);
+
+        // synthetic buckets replace base buckets
+        data.candles = overlayCandles(data.candles, synAgg);
+      }
+    }
+   
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
