@@ -1,6 +1,5 @@
 const express = require("express");
 const router = express.Router();
-
 const OKX_BASE = "https://www.okx.com";
 
 const fetchFn =
@@ -8,6 +7,7 @@ const fetchFn =
   ((...args) => import("node-fetch").then(({ default: f }) => f(...args)));
 
 const pairMapping = require("../config/pairMapping");
+const MarketOverride = require("../models/MarketOverride");
 
 function mapToOkxInstId(requestedInstId) {
   return pairMapping[requestedInstId] || requestedInstId;
@@ -126,6 +126,28 @@ function sseSend(res, event, dataObj) {
   res.write(`data: ${JSON.stringify(dataObj)}\n\n`);
 }
 
+function remapBooksToPrice(books, targetMid) {
+  if (!books || !Array.isArray(books.bids) || !Array.isArray(books.asks)) return books;
+
+  const bestBid = Number(books.bids?.[0]?.[0]);
+  const bestAsk = Number(books.asks?.[0]?.[0]);
+  if (!Number.isFinite(bestBid) || !Number.isFinite(bestAsk)) return books;
+
+  const sourceMid = (bestBid + bestAsk) / 2;
+  if (!Number.isFinite(sourceMid) || sourceMid <= 0) return books;
+
+  const ratio = targetMid / sourceMid;
+
+  const mapSide = (side) =>
+    side.map(([px, sz, ...rest]) => [String(Number(px) * ratio), sz, ...rest]);
+
+  return {
+    ...books,
+    bids: mapSide(books.bids),
+    asks: mapSide(books.asks),
+  };
+}
+
 async function fetchTicker(instId) {
   const url = `${OKX_BASE}/api/v5/market/ticker?instId=${encodeURIComponent(
     instId
@@ -201,6 +223,7 @@ function startLoop(instId) {
     const now = Date.now();
     const sz = e.sz;
 
+    const ov = await getActiveOverride(instId);
     const okxInstId = mapToOkxInstId(instId);
     // Throttle OKX calls
     const doBooks = now - lastBooksAt >= BOOKS_MS;
@@ -332,6 +355,14 @@ async function fetchCandles(instId, bar, limit, after, before) {
   return { instId, bar, candles: out };
 }
 
+async function getActiveOverride(instId) {
+  if (instId !== "NEX-USDT") return null;
+  const doc = await MarketOverride.findOne({ instId: "NEX-USDT", isActive: true }).lean();
+  if (!doc) return null;
+  if (doc.endAt && new Date(doc.endAt).getTime() <= Date.now()) return null;
+  return doc;
+}
+
 // ✅ GET /api/markets/candles?instId=BTC-USDT&bar=5m&limit=300
 router.get("/candles", async (req, res) => {
   try {
@@ -354,6 +385,40 @@ router.get("/candles", async (req, res) => {
     const okBar = /^[0-9]+(m|H|D|W|M)$/.test(bar);
     if (!okBar) {
       return res.status(400).json({ error: "Bad bar" });
+    }
+
+    // If admin override is active for NEX-USDT, return override candles (no OKX call)
+    const ov = await getActiveOverride(requestedInstId);
+    if (ov) {
+      const price = Number(ov.fixedPrice);
+      const wickPct = Number(ov.wickPct || 0.001);
+      const nowSec = Math.floor(Date.now() / 1000);
+
+      const barSec =
+        bar === "1m" ? 60 :
+        bar === "15m" ? 900 :
+        (bar === "1H" || bar === "1h") ? 3600 :
+        (bar === "4H" || bar === "4h") ? 14400 :
+        (bar === "1D" || bar === "1d") ? 86400 :
+        60;
+
+      const end = nowSec - (nowSec % barSec);
+      const out = [];
+
+      for (let i = limit - 1; i >= 0; i--) {
+        const t = end - i * barSec;
+        const wiggle = price * wickPct;
+        const high = price + (Math.random() * wiggle);
+        const low = price - (Math.random() * wiggle);
+
+        out.push({ time: t, open: price, high, low, close: price, volume: 0 });
+      }
+
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+
+      return res.json({ data: { instId: requestedInstId, bar, candles: out } });
     }
 
     const data = await fetchCandles(okxInstId, bar, limit, after, before);

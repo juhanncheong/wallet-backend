@@ -1,10 +1,8 @@
-// routes/trade.js  ✅ corrected (matcher-driven limit fills, safer)
-
 const express = require("express");
 const router = express.Router();
 
 const auth = require("../middleware/auth");
-const User = require("../models/User");            // ✅ add this
+const User = require("../models/User");
 const Balance = require("../models/Balance");
 const Order = require("../models/Order");
 const Trade = require("../models/Trade");
@@ -13,6 +11,7 @@ const SUPPORTED = require("../config/supportedPairs");
 const OKX_BASE = "https://www.okx.com";
 const FEE_RATE = 0.001; // 0.1%
 const pairMapping = require("../config/pairMapping");
+const MarketOverride = require("../models/MarketOverride");
 
 const fetchFn =
   global.fetch ||
@@ -28,7 +27,20 @@ function mapToOkxInstId(requestedInstId) {
   return pairMapping[requestedInstId] || requestedInstId;
 }
 
+function ensureSupported(instId) {
+  const id = String(instId).toUpperCase();
+  if (!SUPPORTED.includes(id)) {
+    const err = new Error("Pair not supported");
+    err.status = 400;
+    throw err;
+  }
+  return id;
+}
+
 async function getLastPrice(instId) {
+  const ov = await getActiveOverride(instId);
+  if (ov) return Number(ov.fixedPrice);
+
   const okxInstId = mapToOkxInstId(instId);
   const url = `https://www.okx.com/api/v5/market/ticker?instId=${encodeURIComponent(okxInstId)}`;
   const r = await fetchFn(url, { headers: { accept: "application/json" } });
@@ -85,14 +97,12 @@ async function spendLocked(userId, asset, amount) {
   return res.modifiedCount === 1;
 }
 
-function ensureSupported(instId) {
-  const id = String(instId).toUpperCase();
-  if (!SUPPORTED.includes(id)) {
-    const err = new Error("Pair not supported");
-    err.status = 400;
-    throw err;
-  }
-  return id;
+async function getActiveOverride(instId) {
+  if (instId !== "NEX-USDT") return null;
+  const doc = await MarketOverride.findOne({ instId: "NEX-USDT", isActive: true }).lean();
+  if (!doc) return null;
+  if (doc.endAt && new Date(doc.endAt).getTime() <= Date.now()) return null;
+  return doc;
 }
 
 /**

@@ -5,6 +5,7 @@ const Wallet = require("../models/Wallet");
 const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Balance = require("../models/Balance");
+const MarketOverride = require("../models/MarketOverride");
 
 // ✅ Update user balance and log transaction
 exports.updateUserBalance = async (req, res) => {
@@ -745,5 +746,71 @@ exports.adminForceCancelUserOrders = async (req, res) => {
   } catch (err) {
     console.error("adminForceCancelUserOrders error:", err);
     return res.status(500).json({ message: "Server error", error: err.message });
+  }
+};
+
+// GET /admin/market-override
+exports.getMarketOverride = async (req, res) => {
+  try {
+    const doc = await MarketOverride.findOne({ instId: "NEX-USDT" }).lean();
+    return res.json({ ok: true, data: doc || null });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "Failed to read override" });
+  }
+};
+
+// POST /admin/market-override/start
+// body: { fixedPrice: number, minutes: number }
+exports.startMarketOverride = async (req, res) => {
+  try {
+    const fixedPrice = Number(req.body.fixedPrice);
+    const minutes = Math.max(1, Math.min(Number(req.body.minutes) || 0, 7 * 24 * 60));
+
+    if (!Number.isFinite(fixedPrice) || fixedPrice <= 0) {
+      return res.status(400).json({ ok: false, error: "Bad fixedPrice" });
+    }
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      return res.status(400).json({ ok: false, error: "Bad minutes" });
+    }
+
+    const now = new Date();
+    const endAt = new Date(now.getTime() + minutes * 60 * 1000);
+
+    const update = {
+      instId: "NEX-USDT",
+      isActive: true,
+      fixedPrice,
+      wickPct: 0.001,  // 0.1%
+      blendMinutes: 5, // your chosen blend
+      startAt: now,
+      endAt,
+      updatedAt: now,
+    };
+
+    const doc = await MarketOverride.findOneAndUpdate(
+      { instId: "NEX-USDT" },
+      { $set: update },
+      { upsert: true, new: true }
+    ).lean();
+
+    return res.json({ ok: true, data: doc });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "Failed to start override" });
+  }
+};
+
+// POST /admin/market-override/stop
+exports.stopMarketOverride = async (req, res) => {
+  try {
+    const now = new Date();
+    const doc = await MarketOverride.findOneAndUpdate(
+      { instId: "NEX-USDT" },
+      { $set: { isActive: false, updatedAt: now } },
+      { new: true }
+    ).lean();
+
+    return res.json({ ok: true, data: doc || null });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: "Failed to stop override" });
   }
 };

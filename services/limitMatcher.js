@@ -4,6 +4,7 @@ const Order = require("../models/Order");
 const Balance = require("../models/Balance");
 const Trade = require("../models/Trade");
 const pairMapping = require("../config/pairMapping");
+const MarketOverride = require("../models/MarketOverride");
 
 const OKX_BASE = "https://www.okx.com";
 
@@ -61,6 +62,11 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
     const lastByInst = {};
     await Promise.all(
       uniqueInst.map(async (instId) => {
+          const ov = await getActiveOverride(instId);
+    if (ov) {
+      lastByInst[instId] = Number(ov.fixedPrice);
+      return;
+    }
         const okxInstId = pairMapping[instId] || instId; // <-- add this line
         try {
           lastByInst[instId] = await fetchOkxLast(okxInstId); // <-- use okxInstId
@@ -184,6 +190,14 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
   } finally {
     isRunning = false;
   }
+}
+
+async function getActiveOverride(instId) {
+  if (instId !== "NEX-USDT") return null;
+  const doc = await MarketOverride.findOne({ instId: "NEX-USDT", isActive: true }).lean();
+  if (!doc) return null;
+  if (doc.endAt && new Date(doc.endAt).getTime() <= Date.now()) return null;
+  return doc;
 }
 
 function startLimitMatcher({ intervalMs = 1500 } = {}) {
