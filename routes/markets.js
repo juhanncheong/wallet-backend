@@ -37,6 +37,10 @@ async function recordSyntheticTick(instId, price, wickPct = 0.001) {
     c.c = p;
   }
 
+  // ✅ fake volume per tick (small random)
+  const addV = 1 + Math.floor(Math.random() * 5);
+  c.v = (c.v ?? 0) + addV;
+
   // add tiny “natural” wick noise so it doesn't look dead-flat
   const wiggle = Math.max(0, p * Number(wickPct || 0));
   if (wiggle > 0) {
@@ -57,6 +61,7 @@ async function recordSyntheticTick(instId, price, wickPct = 0.001) {
       $max: { h: c.h },
       $min: { l: c.l },
       $set: { c: c.c },
+      $inc: { v: addV },
     },
     { upsert: true }
   ).catch(() => {});
@@ -135,35 +140,46 @@ function overlayCandles(baseCandles, syntheticCandles) {
   return Array.from(m.values()).sort((a, b) => a.time - b.time);
 }
 
-// Returns a dynamic price within [base, base + band] using a random walk
-function getDynamicOverridePrice(instId, base, band) {
-  const key = instId;
-  const min = base;
-  const max = base + band;
+// Returns a dynamic price within [base - band/2, base + band/2]
+function getDynamicOverridePrice(instId, base, ov) {
+  const band = Number(ov?.band ?? 0.5); // total width
+  const half = Math.max(0.01, band / 2);
 
-  let st = overrideLive.get(key);
-  if (!st || !Number.isFinite(st.price)) {
-    st = { price: base, dir: 1 };
-  }
+  const min = base - half;
+  const max = base + half;
 
-  // step size: 0.01–0.06 (1–6 cents) per tick feels alive
-  const step = (Math.random() * 0.05) + 0.01;
+  let st = overrideLive.get(instId);
+  if (!st || !Number.isFinite(st.price)) st = { price: base, dir: 1 };
 
-  // random direction flips sometimes
-  if (Math.random() < 0.25) st.dir *= -1;
+  const stepMin = Number(ov?.stepMin ?? 0.01);
+  const stepMax = Number(ov?.stepMax ?? 0.06);
+  const flipProb = Number(ov?.flipProb ?? 0.25);
+  const meanRevert = Number(ov?.meanRevert ?? 0.15);
+  const shockProb = Number(ov?.shockProb ?? 0.02);
+  const shockSize = Number(ov?.shockSize ?? 0.25);
 
+  // random direction flips
+  if (Math.random() < flipProb) st.dir *= -1;
+
+  // step
+  const step = stepMin + Math.random() * Math.max(0.001, (stepMax - stepMin));
   let next = st.price + st.dir * step;
+
+  // mean reversion toward base
+  next = next + (base - next) * meanRevert;
+
+  // occasional shock spike
+  if (Math.random() < shockProb) {
+    next += (Math.random() < 0.5 ? -1 : 1) * (shockSize * (0.6 + Math.random() * 0.8));
+  }
 
   // bounce off edges
   if (next >= max) { next = max; st.dir = -1; }
   if (next <= min) { next = min; st.dir = 1; }
 
-  // keep 2 decimals
   next = Math.round(next * 100) / 100;
-
   st.price = clamp(next, min, max);
-  overrideLive.set(key, st);
-
+  overrideLive.set(instId, st);
   return st.price;
 }
 
@@ -383,16 +399,23 @@ function startLoop(instId) {
 
     const ov = await getActiveOverride(instId);
     const okxInstId = mapToOkxInstId(instId);
+
     // Throttle OKX calls
     const doBooks = now - lastBooksAt >= BOOKS_MS;
     const doTicker = now - lastTickerAt >= TICKER_MS;
 
+    // -------------------------
+    // TICKER
+    // -------------------------
     try {
       if (doTicker) {
         if (ov) {
+          // Override active: send synthetic ticker only
           const base = Number(ov.fixedPrice);
-          const p = getDynamicOverridePrice(instId, base, 0.50); // 50 cents band
+          const p = getDynamicOverridePrice(instId, base, ov);
+
           await recordSyntheticTick(instId, p, ov.wickPct);
+
           const t = {
             instId,
             last: String(p),
@@ -402,53 +425,81 @@ function startLoop(instId) {
             volCcy24h: "0",
           };
 
-          const blend = await getBlendState(instId);
-           if (blend) {
-             const base = Number(blend.doc.fixedPrice);         // override base
-             const from = clamp(base + 0.25, base, base + 0.50); // start near middle of band
-             const to = Number(t.last);                         // OKX current last
-             const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
-             const p = round2(from + (to - from) * k);
-
-             await recordSyntheticTick(instId, p, blend.doc.wickPct);
-
-             // overwrite ticker last with blended p so UI matches candles
-             t.last = String(p);
-             t.open24h = t.open24h ?? String(p);
-           }
-
           lastTickerAt = now;
           for (const res of e.clients) sseSend(res, "ticker", t);
         } else {
-          const t = await fetchTicker(okxInstId);
-          t.instId = instId;
+          // Normal OKX ticker
+          const tOkx = await fetchTicker(okxInstId);
+          tOkx.instId = instId;
+
+          // If we recently ended an override, blend synthetic -> OKX for X minutes
+          const blend = await getBlendState(instId);
+          if (blend) {
+            const from =
+              overrideLive.get(instId)?.price ?? Number(blend.doc.fixedPrice);
+
+            const to = Number(tOkx.last);
+            if (Number.isFinite(to)) {
+              const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
+              const p = round2(from + (to - from) * k);
+
+              await recordSyntheticTick(instId, p, blend.doc.wickPct);
+
+              // overwrite ticker shown to UI so line + candle match
+              tOkx.last = String(p);
+              if (tOkx.open24h == null) tOkx.open24h = String(p);
+              if (tOkx.high24h == null) tOkx.high24h = String(p);
+              if (tOkx.low24h == null) tOkx.low24h = String(p);
+            }
+          }
+
           lastTickerAt = now;
-          for (const res of e.clients) sseSend(res, "ticker", t);
+          for (const res of e.clients) sseSend(res, "ticker", tOkx);
         }
       }
     } catch {
-      for (const res of e.clients) sseSend(res, "error", { message: "ticker_fetch_failed" });
+      for (const res of e.clients)
+        sseSend(res, "error", { message: "ticker_fetch_failed" });
     }
 
+    // -------------------------
+    // BOOKS
+    // -------------------------
     try {
       if (doBooks) {
         const b = await fetchBooks(okxInstId, sz);
         b.instId = instId;
 
         if (ov) {
+          // Override active: remap books to synthetic mid
           const base = Number(ov.fixedPrice);
-          const p = getDynamicOverridePrice(instId, base, 0.50);
-          const bestBid = Number(b?.bids?.[0]?.[0]);
-          const bestAsk = Number(b?.asks?.[0]?.[0]);
-          if (Number.isFinite(bestBid) && Number.isFinite(bestAsk) && bestBid > 0 && bestAsk > 0) {
-            const sourceMid = (bestBid + bestAsk) / 2;
-            const ratio = p / sourceMid;
+          const p = getDynamicOverridePrice(instId, base, ov);
+          const remapped = remapBooksToPrice(b, p);
+          b.bids = remapped.bids;
+          b.asks = remapped.asks;
+        } else {
+          // Override ended: during blend window, remap books to blended mid too
+          const blend = await getBlendState(instId);
+          if (blend) {
+            const from =
+              overrideLive.get(instId)?.price ?? Number(blend.doc.fixedPrice);
 
-            const mapSide = (side) =>
-              side.map(([px, qty, ...rest]) => [String(Number(px) * ratio), qty, ...rest]);
+            // Use OKX mid as the blend "to" (no extra OKX ticker call needed)
+            const bestBid = Number(b?.bids?.[0]?.[0]);
+            const bestAsk = Number(b?.asks?.[0]?.[0]);
+            const okxMid =
+              Number.isFinite(bestBid) && Number.isFinite(bestAsk) && bestBid > 0 && bestAsk > 0
+                ? (bestBid + bestAsk) / 2
+                : null;
 
-            b.bids = mapSide(b.bids);
-            b.asks = mapSide(b.asks);
+            if (Number.isFinite(okxMid)) {
+              const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
+              const mid = round2(from + (okxMid - from) * k);
+
+              const remapped = remapBooksToPrice(b, mid);
+              b.bids = remapped.bids;
+              b.asks = remapped.asks;
+            }
           }
         }
 
@@ -456,7 +507,8 @@ function startLoop(instId) {
         for (const res of e.clients) sseSend(res, "books", b);
       }
     } catch {
-      for (const res of e.clients) sseSend(res, "error", { message: "books_fetch_failed" });
+      for (const res of e.clients)
+        sseSend(res, "error", { message: "books_fetch_failed" });
     }
   };
 

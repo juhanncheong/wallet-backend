@@ -765,6 +765,15 @@ exports.startMarketOverride = async (req, res) => {
   try {
     const fixedPrice = Number(req.body.fixedPrice);
     const minutes = Math.max(1, Math.min(Number(req.body.minutes) || 0, 7 * 24 * 60));
+    const band = Number(req.body.band ?? 0.5);
+    const stepMin = Number(req.body.stepMin ?? 0.01);
+    const stepMax = Number(req.body.stepMax ?? 0.06);
+    const flipProb = Number(req.body.flipProb ?? 0.25);
+    const meanRevert = Number(req.body.meanRevert ?? 0.15);
+    const shockProb = Number(req.body.shockProb ?? 0.02);
+    const shockSize = Number(req.body.shockSize ?? 0.25);
+    const volMin = Number(req.body.volMin ?? 1);
+    const volMax = Number(req.body.volMax ?? 25);
 
     if (!Number.isFinite(fixedPrice) || fixedPrice <= 0) {
       return res.status(400).json({ ok: false, error: "Bad fixedPrice" });
@@ -780,8 +789,9 @@ exports.startMarketOverride = async (req, res) => {
       instId: "NEX-USDT",
       isActive: true,
       fixedPrice,
-      wickPct: 0.001,  // 0.1%
-      blendMinutes: 5, // your chosen blend
+      wickPct: 0.001,
+      blendMinutes: 5,
+      band, stepMin, stepMax, flipProb, meanRevert, shockProb, shockSize, volMin, volMax,
       startAt: now,
       endAt,
       updatedAt: now,
