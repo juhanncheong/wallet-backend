@@ -143,6 +143,9 @@ function overlayCandles(baseCandles, syntheticCandles) {
 
 // Returns a dynamic price within [base - band/2, base + band/2]
 function getDynamicOverridePrice(instId, base, ov) {
+  if (!Number.isFinite(base) || base <= 0) {
+  return Math.max(0.01, Number(ov?.fixedPrice) || 1);
+}
   const band = Number(ov?.band ?? 0.5);
   const half = Math.max(0.01, band / 2);
 
@@ -175,7 +178,7 @@ function getDynamicOverridePrice(instId, base, ov) {
   if (next <= min) { next = min; st.dir = 1; }
 
   next = Math.round(next * 100) / 100;
-  st.price = clamp(next, min, max);
+  st.price = clamp(next, Math.max(0.01, min), Math.max(0.02, max));
 
   overrideLive.set(instId, st);
   return st.price;
@@ -430,24 +433,29 @@ function startLoop(instId) {
            ).catch(() => {});
          }
 
-         // ✅ Reset micro-state when a NEW override session starts (prevents old state spikes)
          const live = overrideLive.get(instId);
            if (!live?.ovStartAt || live.ovStartAt !== String(ov.startAt)) {
             overrideLive.set(instId, { price: start, dir: 1, ovStartAt: String(ov.startAt) });
           }
 
-          // Progress across the whole override window (minutes)
+          if (!Number.isFinite(start) || start <= 0) {
+           start = Number(ov.fixedPrice);
+          }
+          
           const t0 = ov.startAt ? new Date(ov.startAt).getTime() : now;
           const t1 = ov.endAt ? new Date(ov.endAt).getTime() : (t0 + 60_000);
           const k = clamp((now - t0) / Math.max(1, (t1 - t0)), 0, 1);
 
-          // Ease for a natural trend (no robotic linear)
           const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
 
-          // Moving base (this is what prevents 1 big candle)
-          const base = round2(start + (target - start) * eased);
+          let base = start + (target - start) * eased;
 
-          // Add micro realism around the moving base
+         if (!Number.isFinite(base) || base <= 0) {
+          base = target;
+         }
+
+         base = round2(base);
+
           const p = getDynamicOverridePrice(instId, base, ov);
 
           await recordSyntheticTick(instId, p, ov.wickPct);
