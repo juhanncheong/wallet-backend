@@ -643,6 +643,16 @@ async function fetchCandles(instId, bar, limit, after, before) {
     // OKX often returns newest -> oldest, chart wants oldest -> newest
     .sort((a, b) => a.time - b.time);
 
+    if (instId === "NEX-USDT" && out.length) {
+  console.log("[OKX CANDLES]", {
+    instId,
+    bar,
+    first: out[0].close,
+    last: out[out.length - 1].close,
+    minL: Math.min(...out.map(x => x.low)),
+  });
+}
+
   return { instId, bar, candles: out };
 }
 
@@ -716,8 +726,18 @@ router.get("/candles", async (req, res) => {
 
         // synthetic buckets replace base buckets
         data.candles = overlayCandles(data.candles, synAgg);
+
+        // ✅ safety: never allow zero/negative candles (prevents giant wick)
+        data.candles = data.candles
+          .map((c) => {
+          const o = Number(c.open), h = Number(c.high), l = Number(c.low), cl = Number(c.close);
+           if (![o,h,l,cl].every(Number.isFinite)) return null;
+           if (o <= 0 || h <= 0 || l <= 0 || cl <= 0) return null;
+             return c;
+           })
+         .filter(Boolean);
+        }
       }
-    }
    
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");
