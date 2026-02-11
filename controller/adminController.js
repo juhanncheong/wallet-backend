@@ -795,6 +795,7 @@ exports.startMarketOverride = async (req, res) => {
       rampMs: Number(req.body.rampMs ?? 8000),
       startPrice: null,
       startAt: now,
+      startPrice: null,
       endAt,
       updatedAt: now,
     };

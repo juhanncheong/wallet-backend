@@ -21,6 +21,7 @@ const MarketOverrideSchema = new mongoose.Schema({
   volMax: { type: Number, default: 25 },       // for fake volume
 
   startPrice: { type: Number, default: null },
+  endPrice:   { type: Number, default: null },
   rampMs: { type: Number, default: 8000 }, // 8 seconds ramp-in
 
   startAt: { type: Date, default: null },
