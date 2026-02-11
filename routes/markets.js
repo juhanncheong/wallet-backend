@@ -71,6 +71,20 @@ router.get("/tickers", async (req, res) => {
       })
       .sort((a, b) => (b.volQuote24h ?? 0) - (a.volQuote24h ?? 0));
 
+    // Inject NEX-USDT (cloned from OKB-USDT) so it appears in Spot list
+    const okb = rows.find((x) => x.instId === "OKB-USDT");
+    if (okb) {
+      const nex = {
+        ...okb,
+        instId: "NEX-USDT",
+        base: "NEX",
+        quote: "USDT",
+        pair: "NEX/USDT",
+      };
+      // Put it on top so limit slicing doesn't remove it
+      rows.unshift(nex);
+    }
+
     cache = { ts: now, rows };
     res.json({ data: rows.slice(0, limit) });
   } catch (e) {
