@@ -53,4 +53,6 @@ module.exports = [
   "SNX-USDT",
   "COMP-USDT",
   "MKR-USDT",
+
+  "NEX-USDT",
 ];

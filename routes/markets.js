@@ -7,6 +7,12 @@ const fetchFn =
   global.fetch ||
   ((...args) => import("node-fetch").then(({ default: f }) => f(...args)));
 
+const pairMapping = require("../config/pairMapping");
+
+function mapToOkxInstId(requestedInstId) {
+  return pairMapping[requestedInstId] || requestedInstId;
+}
+
 // ✅ Tickers list cache 
 let cache = { ts: 0, rows: null };
 const CACHE_MS = 2000;
@@ -181,13 +187,15 @@ function startLoop(instId) {
     const now = Date.now();
     const sz = e.sz;
 
+    const okxInstId = mapToOkxInstId(instId);
     // Throttle OKX calls
     const doBooks = now - lastBooksAt >= BOOKS_MS;
     const doTicker = now - lastTickerAt >= TICKER_MS;
 
     try {
       if (doTicker) {
-        const t = await fetchTicker(instId);
+        const t = await fetchTicker(okxInstId);
+        t.instId = instId;
         lastTickerAt = now;
         for (const res of e.clients) sseSend(res, "ticker", t);
       }
@@ -198,7 +206,8 @@ function startLoop(instId) {
 
     try {
       if (doBooks) {
-        const b = await fetchBooks(instId, sz);
+        const b = await fetchBooks(okxInstId, sz);
+        b.instId = instId;
         lastBooksAt = now;
         for (const res of e.clients) sseSend(res, "books", b);
       }
@@ -228,22 +237,23 @@ function stopLoop(instId) {
 
 // ✅ SSE: GET /api/markets/stream/spot?instId=BTC-USDT&sz=20
 router.get("/stream/spot", (req, res) => {
-  const instId = String(req.query.instId || "").toUpperCase();
+  const requestedInstId = String(req.query.instId || "").toUpperCase();
+  const okxInstId = mapToOkxInstId(requestedInstId);
   const sz = Math.max(1, Math.min(parseInt(req.query.sz || "20", 10) || 20, 50));
 
-  if (!instId || !instId.includes("-")) {
+  if (!requestedInstId || !requestedInstId.includes("-")) {
     return res.status(400).json({ error: "Bad instId" });
   }
 
   sseInit(res);
-  sseSend(res, "hello", { instId, sz });
+    sseSend(res, "hello", { requestedInstId: requestedInstId, sz });
 
   // Attach client
-  let entry = spotStreams.get(instId);
+  let entry = spotStreams.get(requestedInstId);
   if (!entry) {
     entry = { clients: new Set(), sz, timer: null, hb: null };
-    spotStreams.set(instId, entry);
-    startLoop(instId);
+    spotStreams.set(requestedInstId, entry);
+    startLoop(requestedInstId);
   } else {
     // if new client requests bigger sz, upgrade stream depth (max across clients)
     entry.sz = Math.max(entry.sz, sz);
@@ -253,10 +263,10 @@ router.get("/stream/spot", (req, res) => {
 
   // Cleanup when client disconnects
   req.on("close", () => {
-    const e = spotStreams.get(instId);
+    const e = spotStreams.get(requestedInstId);
     if (!e) return;
     e.clients.delete(res);
-    if (e.clients.size === 0) stopLoop(instId);
+    if (e.clients.size === 0) stopLoop(requestedInstId);
   });
 });
 
@@ -311,7 +321,8 @@ async function fetchCandles(instId, bar, limit, after, before) {
 // ✅ GET /api/markets/candles?instId=BTC-USDT&bar=5m&limit=300
 router.get("/candles", async (req, res) => {
   try {
-    const instId = String(req.query.instId || "").toUpperCase();
+    const requestedInstId = String(req.query.instId || "").toUpperCase();
+    const okxInstId = mapToOkxInstId(requestedInstId);
     const bar = String(req.query.bar || "5m");
 
     const limit = Math.max(
@@ -322,7 +333,7 @@ router.get("/candles", async (req, res) => {
     const after = req.query.after ? Number(req.query.after) : null;
     const before = req.query.before ? Number(req.query.before) : null;
 
-    if (!instId || !instId.includes("-")) {
+    if (!requestedInstId || !requestedInstId.includes("-")) {
       return res.status(400).json({ error: "Bad instId" });
     }
 
@@ -331,7 +342,8 @@ router.get("/candles", async (req, res) => {
       return res.status(400).json({ error: "Bad bar" });
     }
 
-    const data = await fetchCandles(instId, bar, limit, after, before);
+    const data = await fetchCandles(okxInstId, bar, limit, after, before);
+    data.instId = requestedInstId;
 
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
     res.setHeader("Pragma", "no-cache");

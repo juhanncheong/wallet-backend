@@ -12,6 +12,7 @@ const SUPPORTED = require("../config/supportedPairs");
 
 const OKX_BASE = "https://www.okx.com";
 const FEE_RATE = 0.001; // 0.1%
+const pairMapping = require("../config/pairMapping");
 
 const fetchFn =
   global.fetch ||
@@ -23,8 +24,13 @@ function parseInstId(instId) {
   return { base, quote };
 }
 
+function mapToOkxInstId(requestedInstId) {
+  return pairMapping[requestedInstId] || requestedInstId;
+}
+
 async function getLastPrice(instId) {
-  const url = `${OKX_BASE}/api/v5/market/ticker?instId=${encodeURIComponent(instId)}`;
+  const okxInstId = mapToOkxInstId(instId);
+  const url = `https://www.okx.com/api/v5/market/ticker?instId=${encodeURIComponent(okxInstId)}`;
   const r = await fetchFn(url, { headers: { accept: "application/json" } });
   if (!r.ok) throw new Error("OKX ticker failed");
   const j = await r.json();
