@@ -423,117 +423,121 @@ function startLoop(instId) {
     const doTicker = now - lastTickerAt >= TICKER_MS;
 
     // -------------------------
-    // TICKER
-    // -------------------------
-    try {
-      if (doTicker) {
-        if (ov) {
-          const target = safeNum(ov.fixedPrice);
+// TICKER
+// -------------------------
+try {
+  if (doTicker) {
 
-          // ✅ Don't "return" (kills this tick). Fall back to OKX if bad target.
-          if (!target || target <= 0) {
-            const tOkx = await fetchTicker(okxInstId);
-            tOkx.instId = instId;
-            lastTickerAt = now;
-            for (const res of e.clients) sseSend(res, "ticker", tOkx);
-          } else {
-            // Resolve start price robustly
-            let start = safeNum(ov.startPrice);
+    const okxInstId = mapToOkxInstId(instId);
+    const tOkx = await fetchTicker(okxInstId);
+    tOkx.instId = instId;
 
-            if (!start || start <= 0) {
-              const cached = overrideLive.get(instId)?.price;
-              if (Number.isFinite(cached) && cached > 0) start = cached;
+    const ov = await getActiveOverride(instId);
 
-              if (!start || start <= 0) {
-                try {
-                  const tOkx = await fetchTicker(okxInstId);
-                  const okxLast = safeNum(tOkx?.last);
-                  if (okxLast && okxLast > 0) start = okxLast;
-                } catch {}
+    // =============================
+    // 1️⃣ ACTIVE OVERRIDE
+    // =============================
+    if (ov) {
+      const target = safeNum(ov.fixedPrice);
+      if (!target || target <= 0) {
+        lastTickerAt = now;
+        for (const res of e.clients) sseSend(res, "ticker", tOkx);
+      } else {
+
+        // Resolve start price
+        let start = safeNum(ov.startPrice);
+        if (!start || start <= 0) {
+          const okxLast = safeNum(tOkx.last);
+          start = okxLast && okxLast > 0 ? okxLast : target;
+
+          await MarketOverride.updateOne(
+            { instId, isActive: true },
+            { $set: { startPrice: start } }
+          ).catch(() => {});
+        }
+
+        const live = overrideLive.get(instId);
+        const ovStartKey = String(ov.startAt || "");
+        if (!live?.ovStartAt || live.ovStartAt !== ovStartKey) {
+          overrideLive.set(instId, { price: start, dir: 1, ovStartAt: ovStartKey });
+        }
+
+        const t0 = new Date(ov.startAt).getTime();
+        const t1 = new Date(ov.endAt).getTime();
+        const k = clamp((now - t0) / Math.max(1, t1 - t0), 0, 1);
+
+        const eased = k < 0.5
+          ? 2 * k * k
+          : 1 - Math.pow(-2 * k + 2, 2) / 2;
+
+        const base = round2(start + (target - start) * eased);
+        const p = getDynamicOverridePrice(instId, base, ov);
+
+        await recordSyntheticTick(instId, p, ov.wickPct);
+
+        overrideLive.set(instId, { price: p, dir: 1, ovStartAt: ovStartKey });
+
+        tOkx.last = String(p);
+
+        lastTickerAt = now;
+        for (const res of e.clients) sseSend(res, "ticker", tOkx);
+      }
+
+    // =============================
+    // 2️⃣ BLEND BACK AFTER OVERRIDE
+    // =============================
+    } else {
+
+      const blend = await getBlendState(instId);
+
+      if (blend) {
+        const from = safeNum(blend.doc.endPrice) ||
+                     safeNum(blend.doc.startPrice);
+
+        const to = safeNum(tOkx.last);
+
+        if (from && from > 0 && to && to > 0) {
+
+          const k = clamp(
+            (blend.nowMs - blend.endMs) / blend.blendMs,
+            0,
+            1
+          );
+
+          const eased = k < 0.5
+            ? 2 * k * k
+            : 1 - Math.pow(-2 * k + 2, 2) / 2;
+
+          const p = round2(from + (to - from) * eased);
+
+          await recordSyntheticTick(instId, p, blend.doc.wickPct);
+
+          tOkx.last = String(p);
+
+          // 🔥 FINALIZE OVERRIDE WHEN BLEND COMPLETES
+          if (k >= 1) {
+            await MarketOverride.updateOne(
+              { instId },
+              {
+                $set: {
+                  endPrice: p,
+                  isActive: false
+                }
               }
-
-              if (!start || start <= 0) start = target;
-
-              // persist startPrice for this override session
-              await MarketOverride.updateOne(
-                { instId, isActive: true },
-                { $set: { startPrice: start } }
-              ).catch(() => {});
-            }
-
-            // ✅ Reset micro-state when new override session starts
-            const live = overrideLive.get(instId);
-            const ovStartKey = String(ov.startAt || "");
-            if (!live?.ovStartAt || live.ovStartAt !== ovStartKey) {
-              overrideLive.set(instId, { price: start, dir: 1, ovStartAt: ovStartKey });
-            }
-
-            // Progress across override window
-            const t0 = ov.startAt ? new Date(ov.startAt).getTime() : now;
-            const t1 = ov.endAt ? new Date(ov.endAt).getTime() : t0 + 60_000;
-            const k = clamp((now - t0) / Math.max(1, t1 - t0), 0, 1);
-
-            // Ease
-            const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-
-            // Moving base (guarded)
-            let base = start + (target - start) * eased;
-            if (!Number.isFinite(base) || base <= 0) base = target;
-            base = round2(base);
-
-            // Micro realism around base (your function should also guard base internally)
-            const p = getDynamicOverridePrice(instId, base, ov);
-
-            // Persist synthetic tick (NEX only)
-            await recordSyntheticTick(instId, p, ov.wickPct);
-
-            // Emit ticker to UI
-            const t = {
-              instId,
-              last: String(p),
-              open24h: String(p),
-              high24h: String(p),
-              low24h: String(p),
-              volCcy24h: "0",
-            };
-
-            lastTickerAt = now;
-            for (const res of e.clients) sseSend(res, "ticker", t);
+            ).catch(() => {});
           }
-        } else {
-          // Normal OKX ticker
-          const tOkx = await fetchTicker(okxInstId);
-          tOkx.instId = instId;
-
-          // After override ends: blend synthetic -> OKX over blendMinutes
-          const blend = await getBlendState(instId);
-          if (blend) {
-            const from = getBlendFromPrice(instId, blend.doc); // ✅ never fixedPrice
-            const to = safeNum(tOkx.last);
-
-            // ✅ Only blend if BOTH sides are valid
-            if (from && from > 0 && to && to > 0) {
-              const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
-              const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-              const p = round2(from + (to - from) * eased);
-
-              await recordSyntheticTick(instId, p, blend.doc.wickPct);
-
-              tOkx.last = String(p);
-              if (tOkx.open24h == null) tOkx.open24h = String(p);
-              if (tOkx.high24h == null) tOkx.high24h = String(p);
-              if (tOkx.low24h == null) tOkx.low24h = String(p);
-            }
-            // else: skip blending completely => no weird wick to 0.02
-          }
-
-          lastTickerAt = now;
-          for (const res of e.clients) sseSend(res, "ticker", tOkx);
         }
       }
-    } catch {
-      for (const res of e.clients) sseSend(res, "error", { message: "ticker_fetch_failed" });
+
+      lastTickerAt = now;
+      for (const res of e.clients) sseSend(res, "ticker", tOkx);
     }
+  }
+} catch (err) {
+  for (const res of e.clients) {
+    sseSend(res, "error", { message: "ticker_fetch_failed" });
+  }
+}
 
     // -------------------------
     // BOOKS
