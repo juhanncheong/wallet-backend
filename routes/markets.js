@@ -231,13 +231,26 @@ function startLoop(instId) {
 
     try {
       if (doTicker) {
-        const t = await fetchTicker(okxInstId);
-        t.instId = instId;
-        lastTickerAt = now;
-        for (const res of e.clients) sseSend(res, "ticker", t);
+        if (ov) {
+          const p = Number(ov.fixedPrice);
+          const t = {
+            instId,
+            last: String(p),
+            open24h: String(p),
+            high24h: String(p),
+            low24h: String(p),
+            volCcy24h: "0",
+          };
+          lastTickerAt = now;
+          for (const res of e.clients) sseSend(res, "ticker", t);
+        } else {
+          const t = await fetchTicker(okxInstId);
+          t.instId = instId;
+          lastTickerAt = now;
+          for (const res of e.clients) sseSend(res, "ticker", t);
+        }
       }
     } catch {
-      // keep stream alive
       for (const res of e.clients) sseSend(res, "error", { message: "ticker_fetch_failed" });
     }
 
@@ -245,6 +258,23 @@ function startLoop(instId) {
       if (doBooks) {
         const b = await fetchBooks(okxInstId, sz);
         b.instId = instId;
+
+        if (ov) {
+          const p = Number(ov.fixedPrice);
+          const bestBid = Number(b?.bids?.[0]?.[0]);
+          const bestAsk = Number(b?.asks?.[0]?.[0]);
+          if (Number.isFinite(bestBid) && Number.isFinite(bestAsk) && bestBid > 0 && bestAsk > 0) {
+            const sourceMid = (bestBid + bestAsk) / 2;
+            const ratio = p / sourceMid;
+
+            const mapSide = (side) =>
+              side.map(([px, qty, ...rest]) => [String(Number(px) * ratio), qty, ...rest]);
+
+            b.bids = mapSide(b.bids);
+            b.asks = mapSide(b.asks);
+          }
+        }
+
         lastBooksAt = now;
         for (const res of e.clients) sseSend(res, "books", b);
       }
