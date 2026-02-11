@@ -815,9 +815,16 @@ exports.startMarketOverride = async (req, res) => {
 exports.stopMarketOverride = async (req, res) => {
   try {
     const now = new Date();
+
+    // optional: admin can pass endPrice, otherwise we keep whatever was last set
+    const endPrice = Number(req.body.endPrice);
+
+    const set = { isActive: false, updatedAt: now, endAt: now };
+    if (Number.isFinite(endPrice) && endPrice > 0) set.endPrice = endPrice;
+
     const doc = await MarketOverride.findOneAndUpdate(
       { instId: "NEX-USDT" },
-      { $set: { isActive: false, updatedAt: now } },
+      { $set: set },
       { new: true }
     ).lean();
 

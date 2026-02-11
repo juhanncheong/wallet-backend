@@ -384,12 +384,30 @@ function startLoop(instId) {
   const entry = spotStreams.get(instId);
   if (!entry) return;
 
-  // Tuned for MVP: books more frequent than ticker
   const BOOKS_MS = 800;
   const TICKER_MS = 1200;
 
   let lastBooksAt = 0;
   let lastTickerAt = 0;
+
+  const safeNum = (x) => {
+    const n = Number(x);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // ✅ Choose a safe "from" price for blending (never fixedPrice)
+  function getBlendFromPrice(instId, blendDoc) {
+    const live = overrideLive.get(instId)?.price;
+    if (Number.isFinite(live) && live > 0) return live;
+
+    const endP = safeNum(blendDoc?.endPrice);
+    if (endP && endP > 0) return endP;
+
+    const startP = safeNum(blendDoc?.startPrice);
+    if (startP && startP > 0) return startP;
+
+    return null; // if null => skip blending (use OKX directly)
+  }
 
   const loop = async () => {
     const e = spotStreams.get(instId);
@@ -410,67 +428,78 @@ function startLoop(instId) {
     try {
       if (doTicker) {
         if (ov) {
-          const target = Number(ov.fixedPrice);
-          if (!Number.isFinite(target) || target <= 1) return;
+          const target = safeNum(ov.fixedPrice);
 
-         let start = Number(ov.startPrice);
-         if (!Number.isFinite(start)) {
-           const cached = overrideLive.get(instId)?.price;
-           if (Number.isFinite(cached) && cached > 1) start = cached;
+          // ✅ Don't "return" (kills this tick). Fall back to OKX if bad target.
+          if (!target || target <= 0) {
+            const tOkx = await fetchTicker(okxInstId);
+            tOkx.instId = instId;
+            lastTickerAt = now;
+            for (const res of e.clients) sseSend(res, "ticker", tOkx);
+          } else {
+            // Resolve start price robustly
+            let start = safeNum(ov.startPrice);
 
-           if (!Number.isFinite(start)) {
-             try {
-               const tOkx = await fetchTicker(okxInstId);
-               start = Number(tOkx?.last);
-             } catch {}
-           }
-           if (!Number.isFinite(start) || start <= 1) start = target;
+            if (!start || start <= 0) {
+              const cached = overrideLive.get(instId)?.price;
+              if (Number.isFinite(cached) && cached > 0) start = cached;
 
-           await MarketOverride.updateOne(
-            
-             { instId, isActive: true },
-             { $set: { startPrice: start } }
-           ).catch(() => {});
-         }
+              if (!start || start <= 0) {
+                try {
+                  const tOkx = await fetchTicker(okxInstId);
+                  const okxLast = safeNum(tOkx?.last);
+                  if (okxLast && okxLast > 0) start = okxLast;
+                } catch {}
+              }
 
-         const live = overrideLive.get(instId);
-           if (!live?.ovStartAt || live.ovStartAt !== String(ov.startAt)) {
-            overrideLive.set(instId, { price: start, dir: 1, ovStartAt: String(ov.startAt) });
+              if (!start || start <= 0) start = target;
+
+              // persist startPrice for this override session
+              await MarketOverride.updateOne(
+                { instId, isActive: true },
+                { $set: { startPrice: start } }
+              ).catch(() => {});
+            }
+
+            // ✅ Reset micro-state when new override session starts
+            const live = overrideLive.get(instId);
+            const ovStartKey = String(ov.startAt || "");
+            if (!live?.ovStartAt || live.ovStartAt !== ovStartKey) {
+              overrideLive.set(instId, { price: start, dir: 1, ovStartAt: ovStartKey });
+            }
+
+            // Progress across override window
+            const t0 = ov.startAt ? new Date(ov.startAt).getTime() : now;
+            const t1 = ov.endAt ? new Date(ov.endAt).getTime() : t0 + 60_000;
+            const k = clamp((now - t0) / Math.max(1, t1 - t0), 0, 1);
+
+            // Ease
+            const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+
+            // Moving base (guarded)
+            let base = start + (target - start) * eased;
+            if (!Number.isFinite(base) || base <= 0) base = target;
+            base = round2(base);
+
+            // Micro realism around base (your function should also guard base internally)
+            const p = getDynamicOverridePrice(instId, base, ov);
+
+            // Persist synthetic tick (NEX only)
+            await recordSyntheticTick(instId, p, ov.wickPct);
+
+            // Emit ticker to UI
+            const t = {
+              instId,
+              last: String(p),
+              open24h: String(p),
+              high24h: String(p),
+              low24h: String(p),
+              volCcy24h: "0",
+            };
+
+            lastTickerAt = now;
+            for (const res of e.clients) sseSend(res, "ticker", t);
           }
-
-          if (!Number.isFinite(start) || start <= 0) {
-           start = Number(ov.fixedPrice);
-          }
-          
-          const t0 = ov.startAt ? new Date(ov.startAt).getTime() : now;
-          const t1 = ov.endAt ? new Date(ov.endAt).getTime() : (t0 + 60_000);
-          const k = clamp((now - t0) / Math.max(1, (t1 - t0)), 0, 1);
-
-          const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-
-          let base = start + (target - start) * eased;
-
-         if (!Number.isFinite(base) || base <= 0) {
-          base = target;
-         }
-
-         base = round2(base);
-
-          const p = getDynamicOverridePrice(instId, base, ov);
-
-          await recordSyntheticTick(instId, p, ov.wickPct);
-
-          const t = {
-            instId,
-            last: String(p),
-            open24h: String(p),
-            high24h: String(p),
-            low24h: String(p),
-            volCcy24h: "0",
-          };
-
-          lastTickerAt = now;
-          for (const res of e.clients) sseSend(res, "ticker", t);
         } else {
           // Normal OKX ticker
           const tOkx = await fetchTicker(okxInstId);
@@ -479,22 +508,23 @@ function startLoop(instId) {
           // After override ends: blend synthetic -> OKX over blendMinutes
           const blend = await getBlendState(instId);
           if (blend) {
-            const from = overrideLive.get(instId)?.price ?? Number(blend.doc.fixedPrice);
-            const to = Number(tOkx.last);
+            const from = getBlendFromPrice(instId, blend.doc); // ✅ never fixedPrice
+            const to = safeNum(tOkx.last);
 
-            if (Number.isFinite(to)) {
+            // ✅ Only blend if BOTH sides are valid
+            if (from && from > 0 && to && to > 0) {
               const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
               const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
               const p = round2(from + (to - from) * eased);
 
               await recordSyntheticTick(instId, p, blend.doc.wickPct);
 
-              // overwrite ticker shown to UI so line + candle match
               tOkx.last = String(p);
               if (tOkx.open24h == null) tOkx.open24h = String(p);
               if (tOkx.high24h == null) tOkx.high24h = String(p);
               if (tOkx.low24h == null) tOkx.low24h = String(p);
             }
+            // else: skip blending completely => no weird wick to 0.02
           }
 
           lastTickerAt = now;
@@ -514,32 +544,35 @@ function startLoop(instId) {
         b.instId = instId;
 
         if (ov) {
-          // During override: follow latest synthetic price (so books match ticker)
-          const p = overrideLive.get(instId)?.price ?? Number(ov.fixedPrice);
-          const remapped = remapBooksToPrice(b, p);
-          b.bids = remapped.bids;
-          b.asks = remapped.asks;
+          // During override: follow latest synthetic price
+          const p = overrideLive.get(instId)?.price ?? safeNum(ov.fixedPrice);
+          if (Number.isFinite(p) && p > 0) {
+            const remapped = remapBooksToPrice(b, p);
+            b.bids = remapped.bids;
+            b.asks = remapped.asks;
+          }
         } else {
-          // During blend window: remap books to blended mid too (so no snap)
+          // During blend window: remap books to blended mid too
           const blend = await getBlendState(instId);
           if (blend) {
-            const from = overrideLive.get(instId)?.price ?? Number(blend.doc.fixedPrice);
+            const from = getBlendFromPrice(instId, blend.doc); // ✅ never fixedPrice
+            if (from && from > 0) {
+              const bestBid = Number(b?.bids?.[0]?.[0]);
+              const bestAsk = Number(b?.asks?.[0]?.[0]);
+              const okxMid =
+                Number.isFinite(bestBid) && Number.isFinite(bestAsk) && bestBid > 0 && bestAsk > 0
+                  ? (bestBid + bestAsk) / 2
+                  : null;
 
-            const bestBid = Number(b?.bids?.[0]?.[0]);
-            const bestAsk = Number(b?.asks?.[0]?.[0]);
-            const okxMid =
-              Number.isFinite(bestBid) && Number.isFinite(bestAsk) && bestBid > 0 && bestAsk > 0
-                ? (bestBid + bestAsk) / 2
-                : null;
+              if (Number.isFinite(okxMid) && okxMid > 0) {
+                const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
+                const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+                const mid = round2(from + (okxMid - from) * eased);
 
-            if (Number.isFinite(okxMid)) {
-              const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
-              const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-              const mid = round2(from + (okxMid - from) * eased);
-
-              const remapped = remapBooksToPrice(b, mid);
-              b.bids = remapped.bids;
-              b.asks = remapped.asks;
+                const remapped = remapBooksToPrice(b, mid);
+                b.bids = remapped.bids;
+                b.asks = remapped.asks;
+              }
             }
           }
         }
@@ -552,10 +585,8 @@ function startLoop(instId) {
     }
   };
 
-  // Run quickly
   entry.timer = setInterval(loop, 300);
 
-  // Heartbeat
   entry.hb = setInterval(() => {
     const e = spotStreams.get(instId);
     if (!e) return;
@@ -675,19 +706,41 @@ async function getActiveOverride(instId) {
 async function getBlendState(instId) {
   if (instId !== "NEX-USDT") return null;
 
-  // last known override doc (even if inactive)
-  const doc = await MarketOverride.findOne({ instId: "NEX-USDT" }).lean();
-  if (!doc?.endAt || !doc?.startAt) return null;
+  // ✅ Always pick the latest override doc deterministically
+  const doc = await MarketOverride.findOne({ instId: "NEX-USDT" })
+    .sort({ updatedAt: -1, endAt: -1, createdAt: -1 })
+    .lean();
+
+  if (!doc) return null;
+
+  // must have a finished window
+  if (!doc.startAt || !doc.endAt) return null;
 
   const endMs = new Date(doc.endAt).getTime();
   const nowMs = Date.now();
-  if (nowMs <= endMs) return null;
 
-  const blendMin = Number(doc.blendMinutes || 5);
-  const blendMs = blendMin * 60 * 1000;
+  // only after it ended
+  if (!Number.isFinite(endMs) || nowMs <= endMs) return null;
 
-  // only blend within window
+  const blendMin = Number(doc.blendMinutes);
+  const blendMs = (Number.isFinite(blendMin) && blendMin > 0 ? blendMin : 5) * 60 * 1000;
+
+  // only blend inside window
   if (nowMs > endMs + blendMs) return null;
+
+  // ✅ sanity checks (prevents blending from garbage docs)
+  const fp = Number(doc.fixedPrice);
+  const sp = Number(doc.startPrice);
+  const ep = Number(doc.endPrice);
+
+  // if fixedPrice is missing/bad, skip blending
+  if (!Number.isFinite(fp) || fp <= 0) return null;
+
+  // If you haven't implemented endPrice yet, this still works,
+  // but you'll rely on overrideLive in startLoop.
+  // If startPrice exists and is garbage, skip blending.
+  if (doc.startPrice != null && (!Number.isFinite(sp) || sp <= 0)) return null;
+  if (doc.endPrice != null && (!Number.isFinite(ep) || ep <= 0)) return null;
 
   return { doc, endMs, nowMs, blendMs };
 }
