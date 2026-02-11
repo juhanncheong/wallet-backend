@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Balance = require("../models/Balance");
 const Trade = require("../models/Trade");
+const pairMapping = require("../config/pairMapping");
 
 const OKX_BASE = "https://www.okx.com";
 
@@ -60,8 +61,9 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
     const lastByInst = {};
     await Promise.all(
       uniqueInst.map(async (instId) => {
+        const okxInstId = pairMapping[instId] || instId; // <-- add this line
         try {
-          lastByInst[instId] = await fetchOkxLast(instId);
+          lastByInst[instId] = await fetchOkxLast(okxInstId); // <-- use okxInstId
         } catch {
           lastByInst[instId] = null;
         }
