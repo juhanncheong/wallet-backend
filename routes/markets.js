@@ -146,7 +146,7 @@ function getDynamicOverridePrice(instId, base, ov) {
   const band = Number(ov?.band ?? 0.5);
   const half = Math.max(0.01, band / 2);
 
-  const min = base - half;
+  const min = Math.max(0.01, base - half);
   const max = base + half;
 
   let st = overrideLive.get(instId);
@@ -163,6 +163,7 @@ function getDynamicOverridePrice(instId, base, ov) {
 
   const step = stepMin + Math.random() * Math.max(0.001, (stepMax - stepMin));
   let next = st.price + st.dir * step;
+  if (!Number.isFinite(next) || next <= 0) next = base;
 
   next = next + (base - next) * meanRevert;
 
