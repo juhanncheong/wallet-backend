@@ -796,7 +796,13 @@ router.get("/candles", async (req, res) => {
           barSec === 60 ? syn1m : aggregateCandlesFrom1m(syn1m, barSec);
 
         // synthetic buckets replace base buckets
-        data.candles = overlayCandles(data.candles, synAgg);
+        const map = new Map(data.candles.map(c => [c.time, c]));
+
+        for (const s of synAgg) {
+          map.set(s.time, s); // replace OR insert
+        }
+
+        data.candles = Array.from(map.values()).sort((a,b) => a.time - b.time);
 
         // ✅ safety: never allow zero/negative candles (prevents giant wick)
         data.candles = data.candles
