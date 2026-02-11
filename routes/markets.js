@@ -410,24 +410,51 @@ function startLoop(instId) {
     try {
       if (doTicker) {
         if (ov) {
-          // Override active: send synthetic ticker only
-          const base = Number(ov.fixedPrice);
-          const p = getDynamicOverridePrice(instId, base, ov);
+  // Override active: send synthetic ticker only
+  const fixed = Number(ov.fixedPrice);
 
-          await recordSyntheticTick(instId, p, ov.wickPct);
+  // 1) Seed startPrice once (first time we see override active)
+  let start = Number(ov.startPrice);
+  if (!Number.isFinite(start)) {
+    try {
+      const tOkx = await fetchTicker(okxInstId);
+      start = Number(tOkx?.last);
+    } catch {}
+    if (!Number.isFinite(start)) start = fixed;
 
-          const t = {
-            instId,
-            last: String(p),
-            open24h: String(p),
-            high24h: String(p),
-            low24h: String(p),
-            volCcy24h: "0",
-          };
+    await MarketOverride.updateOne(
+      { instId, isActive: true },
+      { $set: { startPrice: start } }
+    ).catch(() => {});
+  }
 
-          lastTickerAt = now;
-          for (const res of e.clients) sseSend(res, "ticker", t);
-        } else {
+  // 2) Ramp base from startPrice -> fixedPrice over rampMs
+  const rampMs = Number(ov.rampMs ?? 8000);
+  const t0 = ov.startAt ? new Date(ov.startAt).getTime() : Date.now();
+  const k = clamp((Date.now() - t0) / Math.max(500, rampMs), 0, 1);
+
+  // ease-in-out curve
+  const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+
+  const base = round2(start + (fixed - start) * eased);
+
+  // 3) Now generate realistic movement around base
+  const p = getDynamicOverridePrice(instId, base, ov);
+
+  await recordSyntheticTick(instId, p, ov.wickPct);
+
+  const t = {
+    instId,
+    last: String(p),
+    open24h: String(p),
+    high24h: String(p),
+    low24h: String(p),
+    volCcy24h: "0",
+  };
+
+  lastTickerAt = now;
+  for (const res of e.clients) sseSend(res, "ticker", t);
+} else {
           // Normal OKX ticker
           const tOkx = await fetchTicker(okxInstId);
           tOkx.instId = instId;
@@ -472,8 +499,7 @@ function startLoop(instId) {
 
         if (ov) {
           // Override active: remap books to synthetic mid
-          const base = Number(ov.fixedPrice);
-          const p = getDynamicOverridePrice(instId, base, ov);
+          const p = overrideLive.get(instId)?.price ?? Number(ov.fixedPrice);
           const remapped = remapBooksToPrice(b, p);
           b.bids = remapped.bids;
           b.asks = remapped.asks;

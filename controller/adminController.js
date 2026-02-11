@@ -792,6 +792,8 @@ exports.startMarketOverride = async (req, res) => {
       wickPct: 0.001,
       blendMinutes: 5,
       band, stepMin, stepMax, flipProb, meanRevert, shockProb, shockSize, volMin, volMax,
+      rampMs: Number(req.body.rampMs ?? 8000),
+      startPrice: null,
       startAt: now,
       endAt,
       updatedAt: now,
