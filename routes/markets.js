@@ -406,10 +406,9 @@ function startLoop(instId) {
     try {
       if (doTicker) {
         if (ov) {
-          // Override active: walk price from startPrice -> fixedPrice over FULL duration
           const target = Number(ov.fixedPrice);
+          if (!Number.isFinite(target) || target <= 1) return;
 
-         // Seed startPrice ONCE so first candle doesn't jump
          let start = Number(ov.startPrice);
          if (!Number.isFinite(start)) {
            const cached = overrideLive.get(instId)?.price;
@@ -421,8 +420,7 @@ function startLoop(instId) {
                start = Number(tOkx?.last);
              } catch {}
            }
-
-           if (!Number.isFinite(start)) start = target;
+           if (!Number.isFinite(start) || start <= 1) start = target;
 
            await MarketOverride.updateOne(
             
