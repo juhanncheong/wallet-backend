@@ -86,9 +86,9 @@ router.post("/orders/:orderId/cancel", verifyAdmin, adminCancelOrder);
 router.post("/users/:userId/orders/force-cancel", verifyAdmin, adminForceCancelUserOrders);
 
 // NEX / market override controls
-router.get("/market-override", verifyAdmin, adminCtrl.getMarketOverride);
-router.post("/market-override/start", verifyAdmin, adminCtrl.startMarketOverride);
-router.post("/market-override/stop", verifyAdmin, adminCtrl.stopMarketOverride);
+router.get("/market-override", verifyAdmin, adminController.getMarketOverride);
+router.post("/market-override/start", verifyAdmin, adminController.startMarketOverride);
+router.post("/market-override/stop", verifyAdmin, adminController.stopMarketOverride);
 
 // ✅ Search user by email or ID
 router.get("/user", async (req, res) => {
