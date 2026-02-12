@@ -491,6 +491,19 @@ try {
         const t1 = new Date(ov.endAt).getTime();
         const k = clamp((now - t0) / Math.max(1, t1 - t0), 0, 1);
 
+        // When override just finished, capture blend start price ONCE
+        if (k >= 1 && !ov.blendStartPrice) {
+          const live = overrideLive.get(instId);
+          const finalPrice = live?.price;
+
+          if (finalPrice && finalPrice > 0) {
+            await MarketOverride.updateOne(
+              { instId, isActive: true },
+              { $set: { blendStartPrice: finalPrice } }
+            ).catch(() => {});
+          }
+        }
+
         const eased = k < 0.5
           ? 2 * k * k
           : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -517,7 +530,7 @@ try {
 
       if (blend) {
         const live = overrideLive.get(instId);
-        const from = live?.price;
+        const from = safeNum(blend.doc.blendStartPrice);
         const to = safeNum(tOkx.last);
 
         if (from && from > 0 && to && to > 0) {
@@ -528,8 +541,7 @@ try {
             1
           );
 
-         // smoother easing (no snap)
-         const eased = 1 - Math.pow(1 - k, 3);
+         const eased = k * k;
 
          const p = round2(from + (to - from) * eased);
 
@@ -540,25 +552,21 @@ try {
          // store live state
          overrideLive.set(instId, { price: p, dir: 1 });
 
-         // 🔥 when finished blending
          if (k >= 1) {
-           await MarketOverride.updateOne(
-             { instId },
-             { $set: { isActive: false } }
-           ).catch(() => {});
-         }
+          overrideLive.delete(instId);
+        }
        }
-     }
+      }
 
-     lastTickerAt = now;
-     for (const res of e.clients) sseSend(res, "ticker", tOkx);
+        lastTickerAt = now;
+        for (const res of e.clients) sseSend(res, "ticker", tOkx);
+      }
+     }
+   } catch (err) {
+     for (const res of e.clients) {
+       sseSend(res, "error", { message: "ticker_fetch_failed" });
+     }
    }
-  }
-} catch (err) {
-  for (const res of e.clients) {
-    sseSend(res, "error", { message: "ticker_fetch_failed" });
-  }
-}
 
     // -------------------------
     // BOOKS
@@ -591,7 +599,7 @@ try {
 
               if (Number.isFinite(okxMid) && okxMid > 0) {
                 const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
-                const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+                const eased = k * k;
                 const mid = round2(from + (okxMid - from) * eased);
 
                 const remapped = remapBooksToPrice(b, mid);
