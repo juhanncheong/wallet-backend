@@ -531,7 +531,9 @@ try {
       if (blend) {
         const live = overrideLive.get(instId);
         const from = safeNum(blend.doc.blendStartPrice);
-        const to = safeNum(tOkx.last);
+        const okxLast = safeNum(tOkx.last);
+        const prev = overrideLive.get(instId)?.price ?? from;
+        const to = prev + (okxLast - prev) * 0.05;
 
         if (from && from > 0 && to && to > 0) {
 
@@ -541,7 +543,7 @@ try {
             1
           );
 
-         const eased = k * k;
+         const eased = 1 - Math.pow(1 - k, 2);
 
          const p = round2(from + (to - from) * eased);
 
@@ -599,7 +601,7 @@ try {
 
               if (Number.isFinite(okxMid) && okxMid > 0) {
                 const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
-                const eased = k * k;
+                const eased = 1 - Math.pow(1 - k, 2);
                 const mid = round2(from + (okxMid - from) * eased);
 
                 const remapped = remapBooksToPrice(b, mid);
@@ -716,17 +718,9 @@ async function fetchCandles(instId, bar, limit, after, before) {
     .sort((a, b) => a.time - b.time);
 
     if (instId === "NEX-USDT" && out.length) {
-  console.log("[OKX CANDLES]", {
-    instId,
-    bar,
-    first: out[0].close,
-    last: out[out.length - 1].close,
-    minL: Math.min(...out.map(x => x.low)),
-  });
-}
-
-  return { instId, bar, candles: out };
-}
+     }
+     return { instId, bar, candles: out };
+   }
 
 async function getActiveOverride(instId) {
   if (instId !== "NEX-USDT") return null;
@@ -761,7 +755,7 @@ async function getBlendState(instId) {
   const overrideMs = Math.max(0, endMsReal - startMs);
 
   // 🔥 Return duration = 150% of pump duration
-  const blendMs = Math.floor(overrideMs * 1.5);
+  const blendMs = Math.floor(overrideMs * 2);
 
   // only blend inside window
   if (nowMs > endMs + blendMs) return null;
@@ -822,8 +816,6 @@ router.get("/candles", async (req, res) => {
        const endSec = nowSec;
 
       const syn1m = await loadSynthetic1m("NEX-USDT", startSec, endSec);
-
-       console.log("Synthetic count:", syn1m.length);
 
       if (syn1m.length) {
         const synAgg =
