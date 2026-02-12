@@ -535,11 +535,10 @@ try {
 
       if (blend) {
         const live = overrideLive.get(instId);
-        const from = safeNum(blend.doc.blendStartPrice);
         const okxLast = safeNum(tOkx.last);
-        const prev = overrideLive.get(instId)?.price ?? from;
+        const from = safeNum(blend.doc.blendStartPrice);
 
-        if (from && from > 0 && to && to > 0) {
+        if (from && from > 0 && okxLast && okxLast > 0) {
 
           const k = clamp(
             (blend.nowMs - blend.endMs) / blend.blendMs,
@@ -547,21 +546,21 @@ try {
             1
           );
 
-         const eased = 1 - Math.pow(1 - k, 2);
+          // Smooth slow return curve
+          const eased = 1 - Math.pow(1 - k, 3);
 
-         const p = round2(from + (to - from) * eased);
+          const p = round2(from + (okxLast - from) * eased);
 
-         await recordSyntheticTick(instId, p, blend.doc.wickPct);
+          await recordSyntheticTick(instId, p, blend.doc.wickPct);
 
-         tOkx.last = String(p);
+          tOkx.last = String(p);
 
-         // store live state
-         overrideLive.set(instId, { price: p, dir: 1 });
+          overrideLive.set(instId, { price: p, dir: 1 });
 
-         if (k >= 1) {
-          overrideLive.delete(instId);
+          if (k >= 1) {
+            overrideLive.delete(instId);
+          }
         }
-       }
       }
 
         lastTickerAt = now;
