@@ -519,7 +519,7 @@ try {
         const from = safeNum(blend.doc.endPrice) ||
                      safeNum(blend.doc.startPrice);
 
-        const to = safeNum(tOkx.last);
+        const to = safeNum(blend.doc.endPrice) || safeNum(tOkx.last);
 
         if (from && from > 0 && to && to > 0) {
 
@@ -529,10 +529,7 @@ try {
             1
           );
 
-          const eased = k < 0.5
-            ? 2 * k * k
-            : 1 - Math.pow(-2 * k + 2, 2) / 2;
-
+          const eased = 1 - Math.pow(1 - k, 3);
           const p = round2(from + (to - from) * eased);
 
           await recordSyntheticTick(instId, p, blend.doc.wickPct);
@@ -751,8 +748,13 @@ async function getBlendState(instId) {
   // only after it ended
   if (!Number.isFinite(endMs) || nowMs <= endMs) return null;
 
-  const blendMin = Number(doc.blendMinutes);
-  const blendMs = (Number.isFinite(blendMin) && blendMin > 0 ? blendMin : 5) * 60 * 1000;
+  const startMs = new Date(doc.startAt).getTime();
+  const endMsReal = new Date(doc.endAt).getTime();
+
+  const overrideMs = Math.max(0, endMsReal - startMs);
+
+  // 🔥 Return duration = 150% of pump duration
+  const blendMs = Math.floor(overrideMs * 1.5);
 
   // only blend inside window
   if (nowMs > endMs + blendMs) return null;
