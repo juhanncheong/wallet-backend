@@ -509,17 +509,16 @@ try {
       }
 
     // =============================
-    // 2️⃣ BLEND BACK AFTER OVERRIDE
+    // BLEND BACK AFTER OVERRIDE
     // =============================
     } else {
 
       const blend = await getBlendState(instId);
 
       if (blend) {
-        const from = safeNum(blend.doc.endPrice) ||
-                     safeNum(blend.doc.startPrice);
-
-        const to = safeNum(blend.doc.endPrice) || safeNum(tOkx.last);
+        const live = overrideLive.get(instId);
+        const from = live?.price;
+        const to = safeNum(tOkx.last);
 
         if (from && from > 0 && to && to > 0) {
 
@@ -529,31 +528,31 @@ try {
             1
           );
 
-          const eased = 1 - Math.pow(1 - k, 3);
-          const p = round2(from + (to - from) * eased);
+         // smoother easing (no snap)
+         const eased = 1 - Math.pow(1 - k, 3);
 
-          await recordSyntheticTick(instId, p, blend.doc.wickPct);
+         const p = round2(from + (to - from) * eased);
 
-          tOkx.last = String(p);
+         await recordSyntheticTick(instId, p, blend.doc.wickPct);
 
-          // 🔥 FINALIZE OVERRIDE WHEN BLEND COMPLETES
-          if (k >= 1) {
-            await MarketOverride.updateOne(
-              { instId },
-              {
-                $set: {
-                  endPrice: p,
-                  isActive: false
-                }
-              }
-            ).catch(() => {});
-          }
-        }
-      }
+         tOkx.last = String(p);
 
-      lastTickerAt = now;
-      for (const res of e.clients) sseSend(res, "ticker", tOkx);
-    }
+         // store live state
+         overrideLive.set(instId, { price: p, dir: 1 });
+
+         // 🔥 when finished blending
+         if (k >= 1) {
+           await MarketOverride.updateOne(
+             { instId },
+             { $set: { isActive: false } }
+           ).catch(() => {});
+         }
+       }
+     }
+
+     lastTickerAt = now;
+     for (const res of e.clients) sseSend(res, "ticker", tOkx);
+   }
   }
 } catch (err) {
   for (const res of e.clients) {
