@@ -538,7 +538,6 @@ try {
         const from = safeNum(blend.doc.blendStartPrice);
         const okxLast = safeNum(tOkx.last);
         const prev = overrideLive.get(instId)?.price ?? from;
-        const to = prev + (okxLast - prev) * 0.05;
 
         if (from && from > 0 && to && to > 0) {
 
