@@ -492,17 +492,22 @@ try {
         const k = clamp((now - t0) / Math.max(1, t1 - t0), 0, 1);
 
         // When override just finished, capture blend start price ONCE
-        if (k >= 1 && !ov.blendStartPrice) {
+        if (now >= new Date(ov.endAt).getTime() && ov.isActive) {
           const live = overrideLive.get(instId);
           const finalPrice = live?.price;
 
-          if (finalPrice && finalPrice > 0) {
-            await MarketOverride.updateOne(
-              { instId, isActive: true },
-              { $set: { blendStartPrice: finalPrice } }
-            ).catch(() => {});
-          }
+        if (finalPrice && finalPrice > 0) {
+          await MarketOverride.updateOne(
+            { instId, isActive: true },
+            {
+              $set: {
+                isActive: false,
+                blendStartPrice: finalPrice
+              }
+            }
+          );
         }
+      }
 
         const eased = k < 0.5
           ? 2 * k * k
