@@ -66,29 +66,6 @@ mongoose
 
 startLimitMatcher({ intervalMs: 1500 });
 
-// ==========================
-// Admin Auth (keep if used)
-// ==========================
-app.post("/admin/login", async (req, res) => {
-  try {
-    const { username, password } = req.body;
-
-    const admin = await Admin.findOne({ username });
-    if (!admin || admin.password !== password) {
-      return res.status(401).send("Unauthorized");
-    }
-
-    const token = jwt.sign(
-      { adminId: admin._id },
-      process.env.JWT_SECRET || "secretkey"
-    );
-
-    res.json({ token });
-  } catch (err) {
-    res.status(500).json({ error: "Admin login failed" });
-  }
-});
-
 // ✅ Middleware: Verify Admin (used by legacy /admin endpoints below)
 function verifyAdmin(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
