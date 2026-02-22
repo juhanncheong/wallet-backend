@@ -7,6 +7,7 @@ const auth = require("../middleware/auth");
 const isAdmin = require("../middleware/isAdmin");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const RewardGrant = require("../models/RewardGrant");
+const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Balance = require("../models/Balance");
 const adminController = require("../controller/adminController");
@@ -37,8 +38,6 @@ const {
   adminCancelOrder,
   adminForceCancelUserOrders,
 } = require("../controller/adminController");
-
-const mongoose = require("mongoose");
 
 router.get("/users", getAllUsers);
 
