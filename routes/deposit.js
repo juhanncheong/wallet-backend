@@ -14,6 +14,15 @@ router.get("/wire-details", async (req, res) => {
       });
     }
 
+    // 🔒 If disabled globally
+    if (!instruction.isEnabled) {
+      return res.json({
+        success: false,
+        maintenance: true,
+        message: "Wire transfer is currently under maintenance."
+      });
+    }
+
     res.json({
       success: true,
       data: instruction

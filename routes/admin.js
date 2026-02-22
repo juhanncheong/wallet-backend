@@ -651,4 +651,29 @@ router.post("/update-wire-details", verifyAdmin, async (req, res) => {
   }
 });
 
+// Toggle Wire Enable / Disable
+router.patch("/toggle-wire", verifyAdmin, async (req, res) => {
+  try {
+    const { enabled } = req.body;
+
+    let instruction = await DepositInstruction.findOne({ method: "wire" });
+
+    if (!instruction) {
+      instruction = new DepositInstruction({ method: "wire" });
+    }
+
+    instruction.isEnabled = enabled;
+    await instruction.save();
+
+    res.json({
+      success: true,
+      message: `Wire transfer ${enabled ? "enabled" : "disabled"} successfully`
+    });
+
+  } catch (err) {
+    console.error("Toggle wire error:", err);
+    res.status(500).json({ success: false });
+  }
+});
+
 module.exports = router;

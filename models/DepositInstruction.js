@@ -7,6 +7,11 @@ const depositInstructionSchema = new mongoose.Schema({
     default: "wire"
   },
 
+  isEnabled: {
+    type: Boolean,
+    default: true
+  },
+  
   minimumDeposit: {
     type: Number,
     default: 0
