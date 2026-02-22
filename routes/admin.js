@@ -7,10 +7,10 @@ const auth = require("../middleware/auth");
 const isAdmin = require("../middleware/isAdmin");
 const verifyAdmin = require("../middleware/verifyAdmin");
 const RewardGrant = require("../models/RewardGrant");
-const mongoose = require("mongoose");
 const Order = require("../models/Order");
 const Balance = require("../models/Balance");
 const adminController = require("../controller/adminController");
+const DepositInstruction = require("../models/DepositInstruction");
 
 const {
   getAllUsers,
@@ -37,6 +37,8 @@ const {
   adminCancelOrder,
   adminForceCancelUserOrders,
 } = require("../controller/adminController");
+
+const mongoose = require("mongoose");
 
 router.get("/users", getAllUsers);
 
@@ -604,6 +606,49 @@ router.get("/users/:id/balances", verifyAdmin, async (req, res) => {
   } catch (err) {
     console.error("Get user balances error:", err);
     return res.status(500).json({ message: "Server error" });
+  }
+});
+
+// Update wire transfer details
+router.post("/update-wire-details", verifyAdmin, async (req, res) => {
+  try {
+    const {
+      minimumDeposit,
+      recipientName,
+      recipientAddress,
+      recipientAccount,
+      swiftBic,
+      bankName,
+      bankCountry,
+      bankAddress,
+      intermediaryBank,
+      importantNotes
+    } = req.body;
+
+    let instruction = await DepositInstruction.findOne({ method: "wire" });
+
+    if (!instruction) {
+      instruction = new DepositInstruction({ method: "wire" });
+    }
+
+    instruction.minimumDeposit = minimumDeposit || 0;
+    instruction.recipientName = recipientName || "";
+    instruction.recipientAddress = recipientAddress || "";
+    instruction.recipientAccount = recipientAccount || "";
+    instruction.swiftBic = swiftBic || "";
+    instruction.bankName = bankName || "";
+    instruction.bankCountry = bankCountry || "";
+    instruction.bankAddress = bankAddress || "";
+    instruction.intermediaryBank = intermediaryBank || "";
+    instruction.importantNotes = importantNotes || "";
+
+    await instruction.save();
+
+    res.json({ success: true, message: "Wire details updated successfully" });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 

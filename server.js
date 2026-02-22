@@ -24,6 +24,7 @@ const tradeRoutes = require("./routes/trade");
 const { startLimitMatcher } = require("./services/limitMatcher");
 const kycRoutes = require("./routes/kyc");
 const adminKycRoutes = require("./routes/adminKyc");
+const depositRoutes = require("./routes/deposit");
 
 dotenv.config();
 
@@ -51,6 +52,8 @@ app.use("/api/admin", adminBalanceRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/admin/kyc", adminKycRoutes);
+
+app.use("/api/deposit", depositRoutes);
 
 // ✅ MongoDB connection
 mongoose
