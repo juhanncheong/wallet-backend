@@ -9,7 +9,6 @@ const mongoose = require("mongoose");
 const Wallet = require("../models/Wallet");
 const Balance = require("../models/Balance");
 
-// Auth middleware to protect routes
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ message: "Access denied" });
@@ -19,7 +18,7 @@ const authMiddleware = (req, res, next) => {
     req.user = verified;
     next();
   } catch (err) {
-    res.status(400).json({ message: "Invalid token" });
+    res.status(401).json({ message: "Token expired or invalid" });
   }
 };
 
@@ -102,7 +101,7 @@ router.post("/signup", async (req, res) => {
       username.slice(0, 3).toUpperCase() +
       Math.random().toString(36).substring(2, 6).toUpperCase();
 
-    // Create user (no hardcoded wallets anymore)
+    // Create user
     const newUser = new User({
       username,
       email,
@@ -134,7 +133,7 @@ router.post("/signup", async (req, res) => {
         ? `Signup successful using referral code ${referredBy}`
         : "Signup successful",
       referralCode,
-      wallets, // optional: handy for debugging/testing
+      wallets,
     });
   } catch (err) {
     await session.abortTransaction();
@@ -151,7 +150,6 @@ router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
-    // Find user by email
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "Invalid email or password" });
 
@@ -165,14 +163,12 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid email or password" });
     }
 
-    // Generate JWT
     const token = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin || false },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "1d" }
     );
 
-    // ✅ SEND SUCCESS RESPONSE (YOU WERE MISSING THIS!)
     return res.json({
       message: "Login successful",
       token,
@@ -199,7 +195,6 @@ router.get("/user", authMiddleware, async (req, res) => {
     // ✅ pull balances from Balance collection
     const rows = await Balance.find({ userId: user._id }).lean();
 
-    // build { BTC: 31, ETH: 11, ... }
     const balances = {};
     for (const r of rows) balances[r.asset] = Number(r.available || 0);
 
@@ -208,7 +203,7 @@ router.get("/user", authMiddleware, async (req, res) => {
       email: user.email,
       referralCode: user.referralCode,
       wallets: user.wallets,
-      balances,              // ✅ new
+      balances,
       availableCoins: user.availableCoins || {},
       isFrozen: user.isFrozen,
       isWithdrawFrozen: user.isWithdrawFrozen,
@@ -221,7 +216,7 @@ router.get("/user", authMiddleware, async (req, res) => {
   }
 });
 
-// ✅ Moved outside
+// ✅ Change password
 router.post("/change-password", authMiddleware, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
 
@@ -243,7 +238,7 @@ router.post("/change-password", authMiddleware, async (req, res) => {
   }
 });
 
-
+// ✅ Change PIN
 router.post("/change-pin", authMiddleware, async (req, res) => {
   const { currentPin, newPin } = req.body;
 

@@ -67,7 +67,7 @@ mongoose
 startLimitMatcher({ intervalMs: 1500 });
 
 // ==========================
-// Admin Auth (keep if used)
+// Admin Auth
 // ==========================
 app.post("/admin/login", async (req, res) => {
   try {
@@ -81,7 +81,7 @@ app.post("/admin/login", async (req, res) => {
     const token = jwt.sign(
       { adminId: admin._id, isAdmin: true },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" }
+      { expiresIn: "1h" }
     );
 
     res.json({ token });
