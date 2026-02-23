@@ -26,32 +26,40 @@ router.post('/', async (req, res) => {
 });
 
 // PUT - Update withdrawal status (admin approval/rejection)
-router.put('/:id/status', async (req, res) => {
+router.put('/:id/status', verifyAdmin, async (req, res) => {
   try {
     const { status } = req.body; // 'completed' or 'failed'
-    const tx = await Transaction.findById(req.params.id);
 
+    if (!["completed", "failed"].includes(status)) {
+      return res.status(400).json({ message: "Invalid status" });
+    }
+
+    const tx = await Transaction.findById(req.params.id);
     if (!tx) return res.status(404).json({ message: 'Transaction not found' });
-    if (tx.type !== 'withdrawal') return res.status(400).json({ message: 'Only withdrawals can be updated' });
+
+    if (tx.type !== 'withdrawal') {
+      return res.status(400).json({ message: 'Only withdrawals can be updated' });
+    }
+
+    if (tx.status !== "pending") {
+      return res.status(400).json({ message: "Already processed" });
+    }
 
     tx.status = status;
     await tx.save();
 
-    // If rejected, refund the user
+    // Refund only if rejected
     if (status === "failed") {
-  const asset = String(tx.coin || "").trim().toUpperCase();
+      const asset = String(tx.coin || "").trim().toUpperCase();
 
-  const bal = await Balance.findOne({ userId: tx.userId, asset });
-  if (!bal) {
-    // if somehow missing, recreate then refund
-    await Balance.create({ userId: tx.userId, asset, available: tx.amount, locked: 0 });
-  } else {
-    bal.available = Number((Number(bal.available || 0) + Number(tx.amount || 0)).toFixed(12));
-    await bal.save();
-  }
-}
+      await Balance.updateOne(
+        { userId: tx.userId, asset },
+        { $inc: { available: tx.amount } }
+      );
+    }
 
     res.json({ message: `Transaction ${status}` });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

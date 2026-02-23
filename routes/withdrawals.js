@@ -14,27 +14,56 @@ router.get("/withdrawals", async (req, res) => {
 });
 
 // ✅ USER: POST /api/withdrawals
-// body: { coin: "USDT", amount: 50, address: "...", network: "TRC20" }
 router.post("/", auth, async (req, res) => {
   try {
-    const userId = req.userId; // your auth sets this
-    let { coin, amount, address, network } = req.body;
+    const userId = req.userId;
+
+    let {
+      coin,
+      amount,
+      address,
+      network,
+      method,
+      bankName,
+      accountName,
+      accountNumber,
+      swiftCode,
+      bankAddress
+    } = req.body;
 
     coin = String(coin || "").trim().toUpperCase();
     amount = Number(amount);
+    method = method || "CRYPTO";
 
     if (!coin) return res.status(400).json({ message: "Coin required" });
     if (!Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ message: "Invalid amount" });
     }
-    if (!address || String(address).trim().length < 8) {
-      return res.status(400).json({ message: "Invalid address" });
-    }
-    if (!network || String(network).trim().length < 2) {
-      return res.status(400).json({ message: "Network required" });
+
+    // ✅ USDT WIRE VALIDATION
+    if (method === "USDT_WIRE") {
+
+      if (coin !== "USDT") {
+        return res.status(400).json({ message: "Wire withdrawal only allowed for USDT" });
+      }
+
+      if (!bankName || !accountName || !accountNumber || !swiftCode) {
+        return res.status(400).json({ message: "Incomplete bank details" });
+      }
+
+    } else {
+
+      // Normal crypto validation
+      if (!address || String(address).trim().length < 8) {
+        return res.status(400).json({ message: "Invalid address" });
+      }
+      if (!network || String(network).trim().length < 2) {
+        return res.status(400).json({ message: "Network required" });
+      }
+
     }
 
-    // ✅ Deduct immediately from Balance.available
+    // ✅ Deduct immediately
     const bal = await Balance.findOne({ userId, asset: coin });
     const available = Number(bal?.available || 0);
 
@@ -46,16 +75,28 @@ router.post("/", auth, async (req, res) => {
     await bal.save();
 
     const tx = await Transaction.create({
-      userId,
-      type: "withdrawal",
-      coin,
-      amount,
-      address: String(address).trim(),
-      network: String(network).trim(),
-      status: "pending",
-    });
+     userId,
+     type: "withdrawal",
+     coin,
+     amount,
+     method: method || "CRYPTO",
+
+     network: method === "CRYPTO" ? network : "",
+     address: method === "CRYPTO" ? address : "",
+
+     wireInfo: method === "USDT_WIRE" ? {
+       bankName,
+       accountName,
+       accountNumber,
+       swiftCode,
+       bankAddress
+     } : undefined,
+
+     status: "pending",
+   });
 
     res.json({ success: true, transaction: tx });
+
   } catch (err) {
     console.error("Create withdrawal error:", err);
     res.status(500).json({ message: "Server error" });
