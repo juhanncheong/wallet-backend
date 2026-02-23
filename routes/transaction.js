@@ -3,7 +3,6 @@ const router = express.Router();
 const Transaction = require('../models/Transaction');
 const User = require('../models/User');
 const Balance = require("../models/Balance");
-const auth = require("../middleware/auth");
 
 // POST - Create a new transaction (deposit or withdrawal)
 router.post('/', async (req, res) => {
@@ -27,7 +26,7 @@ router.post('/', async (req, res) => {
 });
 
 // PUT - Update withdrawal status (admin approval/rejection)
-router.put('/:id/status', verifyAdmin, async (req, res) => {
+router.put('/:id/status', async (req, res) => {
   try {
     const { status } = req.body; // 'completed' or 'failed'
 
