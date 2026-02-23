@@ -19,7 +19,7 @@ router.get("/wire-details", async (req, res) => {
       return res.json({
         success: false,
         maintenance: true,
-        message: "Wire transfer is currently under maintenance."
+        message: "Wire transfer is currently unavailable. Please check again shortly"
       });
     }
 
