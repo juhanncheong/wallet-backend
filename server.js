@@ -56,6 +56,8 @@ app.use("/api/admin/kyc", adminKycRoutes);
 
 app.use("/api/deposit", depositRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+app.use("/api", require("./routes/upload.routes"));
 
 // ✅ MongoDB connection
 mongoose

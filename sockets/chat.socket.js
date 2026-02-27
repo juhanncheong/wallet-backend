@@ -9,41 +9,55 @@ module.exports = (io) => {
     });
 
     socket.on("sendChatMessage", async (data, cb) => {
-  try {
-    const { conversationId, senderId, senderRole, message } = data;
+      try {
+        const { conversationId, senderId, senderRole, message, kind, attachment } = data;
 
-    if (!conversationId || !senderId || !senderRole || !message) {
-      return cb?.({ ok: false, error: "Missing fields" });
-    }
+        if (!conversationId || !senderId || !senderRole) {
+          return cb?.({ ok: false, error: "Missing fields" });
+        }
 
-    const role = senderRole === "admin" ? "agent" : senderRole;
-    const senderModel = role === "customer" ? "User" : "Admin";
+        // ✅ allow attachments even if message empty
+        const hasText = typeof message === "string" && message.trim().length > 0;
+        const hasAttachment = attachment && attachment.url;
 
-    const newMessage = await ChatMessage.create({
-      conversation: conversationId,
-      sender: senderId,
-      senderModel,
-      senderRole: role,
-      message,
+        if (!hasText && !hasAttachment) {
+          return cb?.({ ok: false, error: "Empty message" });
+        }
+
+        const role = senderRole === "admin" ? "agent" : senderRole;
+        const senderModel = role === "customer" ? "User" : "Admin";
+
+        const finalKind = hasAttachment ? (kind || "file") : "text";
+        const finalMessage =
+          hasText ? message.trim()
+          : finalKind === "image" ? "[image]"
+          : "[file]";
+
+        const newMessage = await ChatMessage.create({
+          conversation: conversationId,
+          sender: senderId,
+          senderModel,
+          senderRole: role,
+          message: finalMessage,
+          kind: finalKind,
+          attachment: hasAttachment ? attachment : undefined,
+       });
+
+        const inc = role === "customer" ? { unreadByAgent: 1 } : { unreadByCustomer: 1 };
+
+        await ChatConversation.findByIdAndUpdate(
+          conversationId,
+          { $set: { lastMessage: finalMessage, updatedAt: new Date() }, $inc: inc },
+          { new: true }
+        );
+
+        io.to(conversationId).emit("newChatMessage", newMessage);
+        cb?.({ ok: true, message: newMessage });
+      } catch (err) {
+        console.error("Socket message error:", err);
+        cb?.({ ok: false, error: err.message });
+      }
     });
-
-    const inc = role === "customer"
-      ? { unreadByAgent: 1 }
-      : { unreadByCustomer: 1 };
-
-    await ChatConversation.findByIdAndUpdate(
-      conversationId,
-      { $set: { lastMessage: message, updatedAt: new Date() }, $inc: inc },
-      { new: true }
-    );
-
-    io.to(conversationId).emit("newChatMessage", newMessage);
-    cb?.({ ok: true, message: newMessage });
-  } catch (err) {
-    console.error("Socket message error:", err);
-    cb?.({ ok: false, error: err.message });
-  }
-});
 
   });
 };
