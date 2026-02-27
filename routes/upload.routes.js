@@ -18,21 +18,28 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
 });
 
-router.post("/upload", auth, upload.single("file"), async (req, res) => {
-  if (!req.file) return res.status(400).json({ message: "No file uploaded" });
+router.post("/upload", auth, upload.single("file"), (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ ok: false, message: "No file uploaded" });
 
-  // IMPORTANT: this URL must match how you serve /uploads (next step)
-  const url = `/uploads/${req.file.filename}`;
+    return res.json({
+      ok: true,
+      file: {
+        url: `/uploads/${req.file.filename}`,
+        name: req.file.originalname,
+        mime: req.file.mimetype,
+        size: req.file.size,
+      },
+    });
+  } catch (e) {
+    console.error("Upload error:", e);
+    return res.status(500).json({ ok: false, message: "Upload failed" });
+  }
+});
 
-  res.json({
-    ok: true,
-    file: {
-      url,
-      name: req.file.originalname,
-      mime: req.file.mimetype,
-      size: req.file.size,
-    },
-  });
+router.use((err, req, res, next) => {
+  console.error("Multer error:", err);
+  return res.status(400).json({ ok: false, message: err.message || "Upload error" });
 });
 
 module.exports = router;

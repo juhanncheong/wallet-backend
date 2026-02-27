@@ -1,5 +1,6 @@
 const express = require("express");
 const path = require("path");
+const fs = require("fs");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -54,7 +55,11 @@ app.use("/api/admin/kyc", adminKycRoutes);
 
 app.use("/api/deposit", depositRoutes);
 app.use("/api/chat", chatRoutes);
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+const uploadsDir = path.join(__dirname, "uploads");
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+app.use("/uploads", express.static(uploadsDir));
 app.use("/api", require("./routes/upload.routes"));
 
 // ✅ MongoDB connection
