@@ -36,7 +36,7 @@ router.post("/conversation", auth, async (req, res) => {
       customer: userId,
       agent: admin ? admin._id : null,
       status: admin ? "active" : "waiting",
-      unreadByAdmin: 0,
+      unreadByAgent: 0,
       unreadByCustomer: 0,
     });
 
