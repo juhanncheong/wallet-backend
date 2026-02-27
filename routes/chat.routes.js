@@ -73,7 +73,7 @@ router.get("/messages/:conversationId", auth, async (req, res) => {
 router.get("/admin/conversations", verifyAdmin, async (req, res) => {
   try {
     const conversations = await ChatConversation.find()
-      .populate("customer", "username email")
+      .populate("customer", "username email creditScore isFrozen isWithdrawLocked")
       .populate("agent") // Admin
       .sort({ updatedAt: -1 });
 
