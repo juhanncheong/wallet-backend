@@ -25,6 +25,7 @@ const { startLimitMatcher } = require("./services/limitMatcher");
 const kycRoutes = require("./routes/kyc");
 const adminKycRoutes = require("./routes/adminKyc");
 const depositRoutes = require("./routes/deposit");
+const chatRoutes = require("./routes/chat.routes");
 
 dotenv.config();
 
@@ -54,6 +55,7 @@ app.use("/api/kyc", kycRoutes);
 app.use("/api/admin/kyc", adminKycRoutes);
 
 app.use("/api/deposit", depositRoutes);
+app.use("/api/chat", chatRoutes);
 
 // ✅ MongoDB connection
 mongoose
@@ -118,5 +120,22 @@ app.get("/admin/users", verifyAdmin, async (req, res) => {
 
 app.use("/admin", withdrawalRoutes);
 
+const http = require("http");
+const { Server } = require("socket.io");
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "*", // change to frontend domain in production
+  },
+});
+
+// Attach socket logic
+require("./sockets/chat.socket")(io);
+
 const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+server.listen(PORT, () =>
+  console.log(`Server running on port ${PORT}`)
+);
