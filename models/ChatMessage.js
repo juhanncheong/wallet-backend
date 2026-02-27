@@ -8,12 +8,19 @@ const chatMessageSchema = new mongoose.Schema(
       required: true,
     },
 
+    // ✅ sender can be User OR Admin
     sender: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
       required: true,
+      refPath: "senderModel",
+    },
+    senderModel: {
+      type: String,
+      required: true,
+      enum: ["User", "Admin"],
     },
 
+    // ✅ keep roles simple
     senderRole: {
       type: String,
       enum: ["customer", "agent"],

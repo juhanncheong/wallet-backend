@@ -8,9 +8,10 @@ const chatConversationSchema = new mongoose.Schema(
       required: true,
     },
 
+    // ✅ agent is Admin (not User)
     agent: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Admin",
       default: null,
     },
 
@@ -20,7 +21,7 @@ const chatConversationSchema = new mongoose.Schema(
       default: "waiting",
     },
 
-    lastMessage: String,
+    lastMessage: { type: String, default: "" },
 
     unreadByAgent: {
       type: Number,

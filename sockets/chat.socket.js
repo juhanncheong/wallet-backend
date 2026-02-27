@@ -8,32 +8,40 @@ module.exports = (io) => {
       socket.join(conversationId);
     });
 
-    socket.on("sendChatMessage", async (data) => {
+    socket.on("sendChatMessage", async (data, cb) => {
   try {
     const { conversationId, senderId, senderRole, message } = data;
 
-    if (!conversationId || !senderRole || !message) return; // ✅ senderId not required
+    if (!conversationId || !senderId || !senderRole || !message) {
+      return cb?.({ ok: false, error: "Missing fields" });
+    }
+
+    const role = senderRole === "admin" ? "agent" : senderRole;
+    const senderModel = role === "customer" ? "User" : "Admin";
 
     const newMessage = await ChatMessage.create({
       conversation: conversationId,
-      sender: senderId || null, // ✅ allow null if you want
-      senderRole,               // we'll fix enum below
+      sender: senderId,
+      senderModel,
+      senderRole: role,
       message,
     });
 
-    // update conversation counters
-    const updateFields = { lastMessage: message };
+    const inc = role === "customer"
+      ? { unreadByAgent: 1 }
+      : { unreadByCustomer: 1 };
 
-    if (senderRole === "customer") {
-      updateFields.$inc = { unreadByAgent: 1 };
-    } else {
-      updateFields.$inc = { unreadByCustomer: 1 };
-    }
+    await ChatConversation.findByIdAndUpdate(
+      conversationId,
+      { $set: { lastMessage: message, updatedAt: new Date() }, $inc: inc },
+      { new: true }
+    );
 
-    await ChatConversation.findByIdAndUpdate(conversationId, updateFields);
     io.to(conversationId).emit("newChatMessage", newMessage);
+    cb?.({ ok: true, message: newMessage });
   } catch (err) {
     console.error("Socket message error:", err);
+    cb?.({ ok: false, error: err.message });
   }
 });
 
