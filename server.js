@@ -1,6 +1,5 @@
-// server.js (clean + balance-model-first)
-
 const express = require("express");
+const path = require("path");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -39,7 +38,7 @@ app.use(express.json());
 app.use("/api", authRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/wallet", walletRoutes);
-app.use("/api/user", walletRoutes); // (optional alias, keep if frontend depends on it)
+app.use("/api/user", walletRoutes);
 app.use("/api/futures", futuresRoutes);
 app.use("/api/markets", marketsRoutes);
 app.use("/api/trade", tradeRoutes);
@@ -49,7 +48,6 @@ app.use("/api/withdrawals", withdrawalRoutes);
 app.use("/api/balances", balancesRoutes);
 app.use("/api/admin", adminBalanceRoutes);
 
-// ✅ Other admin routes (keep, but make sure they DON'T touch old User.coins/user.balance coin logic)
 app.use("/api/admin", adminRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/admin/kyc", adminKycRoutes);
