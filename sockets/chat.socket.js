@@ -9,41 +9,33 @@ module.exports = (io) => {
     });
 
     socket.on("sendChatMessage", async (data) => {
-      try {
-        const { conversationId, senderId, senderRole, message } = data;
+  try {
+    const { conversationId, senderId, senderRole, message } = data;
 
-        if (!conversationId || !senderId || !senderRole || !message) {
-          return;
-        }
+    if (!conversationId || !senderRole || !message) return; // ✅ senderId not required
 
-        const newMessage = await ChatMessage.create({
-          conversation: conversationId,
-          sender: senderId,
-          senderRole,
-          message,
-        });
-
-        const updateFields = {
-          lastMessage: message,
-        };
-
-        if (senderRole === "customer") {
-          updateFields.$inc = { unreadByAdmin: 1 };
-        } else {
-          updateFields.$inc = { unreadByCustomer: 1 };
-        }
-
-        await ChatConversation.findByIdAndUpdate(
-          conversationId,
-          updateFields
-        );
-
-        io.to(conversationId).emit("newChatMessage", newMessage);
-
-      } catch (err) {
-        console.error("Socket message error:", err);
-      }
+    const newMessage = await ChatMessage.create({
+      conversation: conversationId,
+      sender: senderId || null, // ✅ allow null if you want
+      senderRole,               // we'll fix enum below
+      message,
     });
+
+    // update conversation counters
+    const updateFields = { lastMessage: message };
+
+    if (senderRole === "customer") {
+      updateFields.$inc = { unreadByAgent: 1 };
+    } else {
+      updateFields.$inc = { unreadByCustomer: 1 };
+    }
+
+    await ChatConversation.findByIdAndUpdate(conversationId, updateFields);
+    io.to(conversationId).emit("newChatMessage", newMessage);
+  } catch (err) {
+    console.error("Socket message error:", err);
+  }
+});
 
   });
 };
