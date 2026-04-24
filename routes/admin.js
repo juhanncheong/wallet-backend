@@ -595,11 +595,54 @@ router.patch("/users/:id/reset-withdrawal-pin-lock", verifyAdmin, async (req, re
 // ✅ Admin: Get user balances (NEW SYSTEM)
 router.get("/users/:id/balances", verifyAdmin, async (req, res) => {
   try {
-    const Balance = require("../models/Balance");
+    const EPSILON = 0.00000001;
 
-    const balances = await Balance.find({
+    const LEGACY_TO_SYMBOL = {
+      BITCOIN: "BTC",
+      ETHEREUM: "ETH",
+      DOGECOIN: "DOGE",
+    };
+
+    function normalizeAsset(asset) {
+      const raw = String(asset || "").trim().toUpperCase();
+      return LEGACY_TO_SYMBOL[raw] || raw;
+    }
+
+    const rows = await Balance.find({
       userId: req.params.id,
-    }).sort({ asset: 1 });
+      $or: [
+        { available: { $gt: EPSILON } },
+        { locked: { $gt: EPSILON } },
+      ],
+    })
+      .sort({ asset: 1 })
+      .lean();
+
+    const merged = {};
+
+    for (const row of rows) {
+      const asset = normalizeAsset(row.asset);
+      if (!asset) continue;
+
+      if (!merged[asset]) {
+        merged[asset] = {
+          ...row,
+          asset,
+          available: 0,
+          locked: 0,
+        };
+      }
+
+      merged[asset].available += Number(row.available || 0);
+      merged[asset].locked += Number(row.locked || 0);
+    }
+
+    const balances = Object.values(merged).filter((row) => {
+      return (
+        Number(row.available || 0) > EPSILON ||
+        Number(row.locked || 0) > EPSILON
+      );
+    });
 
     return res.json(balances);
   } catch (err) {

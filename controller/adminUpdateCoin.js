@@ -4,15 +4,26 @@ const Transaction = require("../models/Transaction");
 
 const EPSILON = 0.00000001;
 
-function normalizeAsset(coin) {
-  const map = {
-    BITCOIN: "BTC",
-    ETHEREUM: "ETH",
-    DOGECOIN: "DOGE",
-  };
+const LEGACY_TO_SYMBOL = {
+  BITCOIN: "BTC",
+  ETHEREUM: "ETH",
+  DOGECOIN: "DOGE",
+};
 
+const SYMBOL_TO_ALL_NAMES = {
+  BTC: ["BTC", "BITCOIN"],
+  ETH: ["ETH", "ETHEREUM"],
+  DOGE: ["DOGE", "DOGECOIN"],
+};
+
+function normalizeAsset(coin) {
   const raw = String(coin || "").trim().toUpperCase();
-  return map[raw] || raw;
+  return LEGACY_TO_SYMBOL[raw] || raw;
+}
+
+function getPossibleAssetNames(coin) {
+  const normalized = normalizeAsset(coin);
+  return SYMBOL_TO_ALL_NAMES[normalized] || [normalized];
 }
 
 module.exports = async (req, res) => {
@@ -24,6 +35,7 @@ module.exports = async (req, res) => {
   }
 
   const asset = normalizeAsset(coin);
+  const possibleAssetNames = getPossibleAssetNames(asset);
 
   amount = Number(amount);
 
@@ -42,9 +54,19 @@ module.exports = async (req, res) => {
       return res.status(404).json({ message: "User not found" });
     }
 
-    const row = await Balance.findOne({ userId: id, asset });
-    const currentAvailable = Number(row?.available || 0);
-    const currentLocked = Number(row?.locked || 0);
+    // Find both new and legacy rows, e.g. ETH + ETHEREUM
+    const rows = await Balance.find({
+      userId: id,
+      asset: { $in: possibleAssetNames },
+    });
+
+    const currentAvailable = rows.reduce((sum, row) => {
+      return sum + Number(row.available || 0);
+    }, 0);
+
+    const currentLocked = rows.reduce((sum, row) => {
+      return sum + Number(row.locked || 0);
+    }, 0);
 
     const next =
       type === "remove"
@@ -52,16 +74,36 @@ module.exports = async (req, res) => {
         : currentAvailable + amount;
 
     if (next < -EPSILON) {
-      return res.status(400).json({ message: "Insufficient balance" });
+      return res.status(400).json({
+        message: "Insufficient balance",
+        asset,
+        currentAvailable,
+        requestedAmount: amount,
+        checkedAssets: possibleAssetNames,
+      });
     }
 
     const nextAvailable = next <= EPSILON ? 0 : Number(next.toFixed(8));
 
     let responseBalance;
 
-    if (nextAvailable <= EPSILON && currentLocked <= EPSILON) {
-      await Balance.deleteOne({ userId: id, asset });
+    // Delete all old/new rows first, so ETHEREUM becomes clean ETH
+    await Balance.deleteMany({
+      userId: id,
+      asset: { $in: possibleAssetNames },
+    });
 
+    // Recreate only if balance remains positive
+    if (nextAvailable > EPSILON || currentLocked > EPSILON) {
+      const created = await Balance.create({
+        userId: id,
+        asset,
+        available: nextAvailable,
+        locked: currentLocked,
+      });
+
+      responseBalance = created.toObject();
+    } else {
       responseBalance = {
         userId: id,
         asset,
@@ -69,20 +111,6 @@ module.exports = async (req, res) => {
         locked: 0,
         deleted: true,
       };
-    } else {
-      const updated = await Balance.findOneAndUpdate(
-        { userId: id, asset },
-        {
-          $setOnInsert: { userId: id, asset },
-          $set: { available: nextAvailable },
-        },
-        {
-          upsert: true,
-          new: true,
-        }
-      ).lean();
-
-      responseBalance = updated;
     }
 
     await Transaction.create({
