@@ -5,6 +5,7 @@ const router = express.Router();
 const Balance = require("../models/Balance");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
+const EPSILON = 0.00000001;
 
 // same admin token logic as server.js uses
 function verifyAdmin(req, res, next) {
@@ -34,14 +35,36 @@ router.post("/balance/set", verifyAdmin, async (req, res) => {
 
     const a = String(asset).toUpperCase().trim();
 
+    if (amount <= EPSILON) {
+      await Balance.deleteOne({ userId, asset: a });
+    
+      return res.json({
+        message: "Balance removed",
+        data: {
+          userId,
+          asset: a,
+          available: 0,
+          locked: 0,
+          deleted: true,
+        },
+      });
+    }
+    
     await Balance.updateOne(
       { userId, asset: a },
-      { $setOnInsert: { userId, asset: a }, $set: { available: amount } },
+      {
+        $setOnInsert: { userId, asset: a },
+        $set: { available: amount },
+      },
       { upsert: true }
     );
-
+    
     const row = await Balance.findOne({ userId, asset: a }).lean();
-    res.json({ message: "Balance set", data: row });
+    
+    res.json({
+      message: "Balance set",
+      data: row,
+    });
   } catch (e) {
     res.status(500).json({ error: "Failed to set balance" });
   }

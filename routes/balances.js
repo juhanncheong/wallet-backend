@@ -4,6 +4,7 @@ const router = express.Router();
 
 const Balance = require("../models/Balance");
 const auth = require("../middleware/auth"); 
+const EPSILON = 0.00000001;
 
 // GET /api/balances
 router.get("/", auth, async (req, res) => {
@@ -14,7 +15,10 @@ router.get("/", auth, async (req, res) => {
     // show only coins user actually has (available>0 or locked>0)
     const rows = await Balance.find({
       userId,
-      $or: [{ available: { $gt: 0 } }, { locked: { $gt: 0 } }],
+      $or: [
+        { available: { $gt: EPSILON } },
+        { locked: { $gt: EPSILON } },
+      ],
     })
       .sort({ asset: 1 })
       .lean();

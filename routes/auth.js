@@ -193,10 +193,28 @@ router.get("/user", authMiddleware, async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     // ✅ pull balances from Balance collection
-    const rows = await Balance.find({ userId: user._id }).lean();
+    const EPSILON = 0.00000001;
 
+    // ✅ pull only real positive balances from Balance collection
+    const rows = await Balance.find({
+      userId: user._id,
+      $or: [
+        { available: { $gt: EPSILON } },
+        { locked: { $gt: EPSILON } },
+      ],
+    }).lean();
+    
     const balances = {};
-    for (const r of rows) balances[r.asset] = Number(r.available || 0);
+    
+    for (const r of rows) {
+      const asset = String(r.asset || "").toUpperCase();
+      const available = Number(r.available || 0);
+    
+      if (!asset) continue;
+      if (available <= EPSILON) continue;
+    
+      balances[asset] = available;
+    }
 
     res.json({
       username: user.username,
