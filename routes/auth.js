@@ -9,6 +9,19 @@ const mongoose = require("mongoose");
 const Wallet = require("../models/Wallet");
 const Balance = require("../models/Balance");
 
+const LEGACY_ASSET_ALIASES = {
+  BITCOIN: "BTC",
+  ETHEREUM: "ETH",
+  DOGECOIN: "DOGE",
+};
+
+function normalizeAsset(asset) {
+  const raw = String(asset || "")
+    .trim()
+    .toUpperCase();
+  return LEGACY_ASSET_ALIASES[raw] || raw;
+}
+
 const authMiddleware = (req, res, next) => {
   const token = req.headers.authorization?.split(" ")[1];
   if (!token) return res.status(401).json({ message: "Access denied" });
@@ -57,7 +70,9 @@ async function allocateDepositWallets(userId, session) {
     });
 
     if (!doc) {
-      const err = new Error(`No available ${w.network} deposit address in pool`);
+      const err = new Error(
+        `No available ${w.network} deposit address in pool`,
+      );
       err.status = 503;
       err.code = "ADDRESS_POOL_EMPTY";
       err.missing = w.key;
@@ -88,7 +103,9 @@ router.post("/signup", async (req, res) => {
     // Optional referral validation
     let validReferrer = null;
     if (referredBy) {
-      validReferrer = await ReferralCode.findOne({ code: referredBy }).session(session);
+      validReferrer = await ReferralCode.findOne({ code: referredBy }).session(
+        session,
+      );
       if (!validReferrer) {
         const err = new Error("Invalid referral code");
         err.status = 400;
@@ -122,7 +139,7 @@ router.post("/signup", async (req, res) => {
     await ReferralCode.updateOne(
       { code: referralCode },
       { code: referralCode },
-      { upsert: true, session }
+      { upsert: true, session },
     );
 
     await session.commitTransaction();
@@ -151,7 +168,8 @@ router.post("/login", async (req, res) => {
 
   try {
     const user = await User.findOne({ email });
-    if (!user) return res.status(400).json({ message: "Invalid email or password" });
+    if (!user)
+      return res.status(400).json({ message: "Invalid email or password" });
 
     // Check if frozen
     if (user.isFrozen) {
@@ -166,7 +184,7 @@ router.post("/login", async (req, res) => {
     const token = jwt.sign(
       { userId: user._id, isAdmin: user.isAdmin || false },
       process.env.JWT_SECRET,
-      { expiresIn: "1d" }
+      { expiresIn: "1d" },
     );
 
     return res.json({
@@ -176,10 +194,9 @@ router.post("/login", async (req, res) => {
         email: user.email,
         username: user.username,
         referralCode: user.referralCode,
-        creditScore: user.creditScore
-      }
+        creditScore: user.creditScore,
+      },
     });
-
   } catch (err) {
     console.error("Login error:", err);
     res.status(500).json({ message: "Internal server error" });
@@ -198,22 +215,19 @@ router.get("/user", authMiddleware, async (req, res) => {
     // ✅ pull only real positive balances from Balance collection
     const rows = await Balance.find({
       userId: user._id,
-      $or: [
-        { available: { $gt: EPSILON } },
-        { locked: { $gt: EPSILON } },
-      ],
+      $or: [{ available: { $gt: EPSILON } }, { locked: { $gt: EPSILON } }],
     }).lean();
-    
+
     const balances = {};
-    
+
     for (const r of rows) {
-      const asset = String(r.asset || "").toUpperCase();
+      const asset = normalizeAsset(r.asset);
       const available = Number(r.available || 0);
-    
+
       if (!asset) continue;
       if (available <= EPSILON) continue;
-    
-      balances[asset] = available;
+
+      balances[asset] = Number(balances[asset] || 0) + available;
     }
 
     res.json({
@@ -222,7 +236,6 @@ router.get("/user", authMiddleware, async (req, res) => {
       referralCode: user.referralCode,
       wallets: user.wallets,
       balances,
-      availableCoins: user.availableCoins || {},
       isFrozen: user.isFrozen,
       isWithdrawFrozen: user.isWithdrawFrozen,
       createdAt: user.createdAt,
@@ -277,7 +290,5 @@ router.post("/change-pin", authMiddleware, async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 
 module.exports = router;

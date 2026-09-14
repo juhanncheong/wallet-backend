@@ -1,24 +1,24 @@
 // routes/adminBalance.js
 const express = require("express");
+const mongoose = require("mongoose");
 const router = express.Router();
 
 const Balance = require("../models/Balance");
 const User = require("../models/User");
-const jwt = require("jsonwebtoken");
+const verifyAdmin = require("../middleware/verifyAdmin");
+
 const EPSILON = 0.00000001;
+const ASSET_ALIASES = {
+  BITCOIN: "BTC",
+  ETHEREUM: "ETH",
+  DOGECOIN: "DOGE",
+};
 
-// same admin token logic as server.js uses
-function verifyAdmin(req, res, next) {
-  const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(403).send("Token missing");
-
-  try {
-    const decoded = jwt.verify(token, "secretkey");
-    req.adminId = decoded.adminId;
-    next();
-  } catch {
-    res.status(403).send("Invalid token");
-  }
+function normalizeAsset(asset) {
+  const raw = String(asset || "")
+    .trim()
+    .toUpperCase();
+  return ASSET_ALIASES[raw] || raw;
 }
 
 // POST /api/admin/balance/set
@@ -26,47 +26,68 @@ function verifyAdmin(req, res, next) {
 router.post("/balance/set", verifyAdmin, async (req, res) => {
   try {
     const { userId, asset, amount } = req.body;
+    const numericAmount = Number(amount);
+    const normalizedAsset = normalizeAsset(asset);
 
-    if (!userId || !asset) return res.status(400).json({ error: "Missing userId/asset" });
-    if (typeof amount !== "number") return res.status(400).json({ error: "Invalid amount" });
+    if (!mongoose.Types.ObjectId.isValid(userId) || !normalizedAsset) {
+      return res.status(400).json({ error: "Invalid userId/asset" });
+    }
+
+    if (!Number.isFinite(numericAmount) || numericAmount < 0) {
+      return res.status(400).json({ error: "Invalid amount" });
+    }
 
     const user = await User.findById(userId);
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const a = String(asset).toUpperCase().trim();
+    const existing = await Balance.findOne({
+      userId,
+      asset: normalizedAsset,
+    });
 
-    if (amount <= EPSILON) {
-      await Balance.deleteOne({ userId, asset: a });
-    
+    if (numericAmount <= EPSILON) {
+      const locked = Number(existing?.locked || 0);
+
+      if (!existing || locked <= EPSILON) {
+        if (existing) await existing.deleteOne();
+
+        return res.json({
+          message: "Balance removed",
+          data: {
+            userId,
+            asset: normalizedAsset,
+            available: 0,
+            locked: 0,
+            deleted: true,
+          },
+        });
+      }
+
+      existing.available = 0;
+      await existing.save();
+
       return res.json({
-        message: "Balance removed",
-        data: {
-          userId,
-          asset: a,
-          available: 0,
-          locked: 0,
-          deleted: true,
-        },
+        message: "Available balance set to zero; locked funds preserved",
+        data: existing,
       });
     }
-    
-    await Balance.updateOne(
-      { userId, asset: a },
+
+    const row = await Balance.findOneAndUpdate(
+      { userId, asset: normalizedAsset },
       {
-        $setOnInsert: { userId, asset: a },
-        $set: { available: amount },
+        $setOnInsert: { userId, asset: normalizedAsset },
+        $set: { available: numericAmount },
       },
-      { upsert: true }
+      { new: true, upsert: true, setDefaultsOnInsert: true },
     );
-    
-    const row = await Balance.findOne({ userId, asset: a }).lean();
-    
-    res.json({
+
+    return res.json({
       message: "Balance set",
       data: row,
     });
-  } catch (e) {
-    res.status(500).json({ error: "Failed to set balance" });
+  } catch (err) {
+    console.error("Set balance error:", err);
+    return res.status(500).json({ error: "Failed to set balance" });
   }
 });
 

@@ -1,5 +1,5 @@
-const User = require('../models/User');
-const Transaction = require('../models/Transaction'); // ADD THIS
+const User = require("../models/User");
+const Transaction = require("../models/Transaction"); // ADD THIS
 const bcrypt = require("bcryptjs");
 const Wallet = require("../models/Wallet");
 const mongoose = require("mongoose");
@@ -7,41 +7,111 @@ const Order = require("../models/Order");
 const Balance = require("../models/Balance");
 const MarketOverride = require("../models/MarketOverride");
 
-// ✅ Update user balance and log transaction
+// Update user balance using Balance as the single source of truth.
 exports.updateUserBalance = async (req, res) => {
   const { id } = req.params;
-  const { amount, coin = 'usdt' } = req.body; // Default to USDT if coin not provided
+  const { amount, coin = "USDT" } = req.body;
+
+  const assetAliases = {
+    BITCOIN: "BTC",
+    ETHEREUM: "ETH",
+    DOGECOIN: "DOGE",
+  };
+
+  const rawAsset = String(coin || "USDT")
+    .trim()
+    .toUpperCase();
+  const asset = assetAliases[rawAsset] || rawAsset;
+  const delta = Number(amount);
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({ message: "Invalid user id" });
+  }
+
+  if (!asset) {
+    return res.status(400).json({ message: "Invalid coin" });
+  }
+
+  if (!Number.isFinite(delta) || delta === 0) {
+    return res
+      .status(400)
+      .json({ message: "Amount must be a non-zero number" });
+  }
+
+  const session = await mongoose.startSession();
 
   try {
-    const user = await User.findById(id);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    let updatedBalance = null;
+    let tx = null;
 
-    user.balance = (user.balance || 0) + amount;
-    user.coins[coin] = (user.coins[coin] || 0) + amount;
-    await user.save();
+    await session.withTransaction(async () => {
+      const user = await User.exists({ _id: id }).session(session);
+      if (!user) {
+        const err = new Error("User not found");
+        err.status = 404;
+        throw err;
+      }
 
-    // ✅ Create a new transaction log
-    const tx = new Transaction({
-      userId: id,
-      type: 'deposit',
-      coin,
-      amount,
-      status: 'completed',
+      if (delta > 0) {
+        updatedBalance = await Balance.findOneAndUpdate(
+          { userId: id, asset },
+          { $inc: { available: delta } },
+          {
+            new: true,
+            upsert: true,
+            setDefaultsOnInsert: true,
+            session,
+          },
+        );
+      } else {
+        const debit = Math.abs(delta);
+        updatedBalance = await Balance.findOneAndUpdate(
+          { userId: id, asset, available: { $gte: debit } },
+          { $inc: { available: -debit } },
+          { new: true, session },
+        );
+
+        if (!updatedBalance) {
+          const err = new Error("Insufficient balance");
+          err.status = 400;
+          throw err;
+        }
+      }
+
+      const created = await Transaction.create(
+        [
+          {
+            userId: id,
+            type: delta > 0 ? "deposit" : "withdrawal",
+            coin: asset,
+            amount: Math.abs(delta),
+            status: "completed",
+          },
+        ],
+        { session },
+      );
+
+      tx = created[0];
     });
-    await tx.save();
 
-    res.json({
+    const available = Number(updatedBalance?.available || 0);
+
+    return res.json({
       success: true,
-      balance: user.balance,
-      coinBalance: user.coins[coin],
-      transactionId: tx._id,
+      asset,
+      balance: available,
+      coinBalance: available,
+      transactionId: tx?._id,
     });
   } catch (err) {
     console.error("Balance update error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(err.status || 500).json({
+      message: err.status ? err.message : "Internal server error",
+    });
+  } finally {
+    session.endSession();
   }
 };
-
 
 // ✅ Change username
 exports.changeUsername = async (req, res) => {
@@ -52,7 +122,7 @@ exports.changeUsername = async (req, res) => {
     const user = await User.findByIdAndUpdate(
       id,
       { username: newUsername },
-      { new: true }
+      { new: true },
     );
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -72,7 +142,7 @@ exports.changeEmail = async (req, res) => {
     const user = await User.findByIdAndUpdate(
       id,
       { email: newEmail },
-      { new: true }
+      { new: true },
     );
     if (!user) return res.status(404).json({ message: "User not found" });
 
@@ -179,10 +249,15 @@ exports.toggleFreezeWithdrawal = async (req, res) => {
     const user = await User.findById(id);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    user.withdrawalFrozen = !user.withdrawalFrozen;
+    user.isWithdrawFrozen = !user.isWithdrawFrozen;
     await user.save();
 
-    res.json({ success: true, withdrawalFrozen: user.withdrawalFrozen });
+    res.json({
+      success: true,
+      isWithdrawFrozen: user.isWithdrawFrozen,
+      // Backward-compatible response key for the existing admin UI.
+      withdrawalFrozen: user.isWithdrawFrozen,
+    });
   } catch (err) {
     console.error("Toggle freeze withdrawal error:", err);
     res.status(500).json({ message: "Failed to toggle withdrawal freeze" });
@@ -193,7 +268,9 @@ exports.updateWalletAddress = async (req, res) => {
   const { id } = req.params;
   const { network, address } = req.body;
 
-  const net = String(network || "").trim().toUpperCase();
+  const net = String(network || "")
+    .trim()
+    .toUpperCase();
   const ALLOWED_NETWORKS = ["ERC20", "BEP20", "TRC20", "BTC", "SOL"];
 
   if (!ALLOWED_NETWORKS.includes(net)) {
@@ -238,7 +315,9 @@ exports.generateReferralCode = async (req, res) => {
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (user.referralCode) {
-      return res.status(400).json({ message: "User already has a referral code" });
+      return res
+        .status(400)
+        .json({ message: "User already has a referral code" });
     }
 
     // Generate a unique referral code
@@ -263,8 +342,6 @@ exports.generateReferralCode = async (req, res) => {
   }
 };
 
-
-
 // ✅ Admin looks up which user owns a referralCode (generated after signup)
 exports.lookupReferralCode = async (req, res) => {
   const { code } = req.query;
@@ -288,18 +365,19 @@ exports.lookupReferralCode = async (req, res) => {
 // ✅ Admin gets users who signed up using a specific referral (who referredBy = code)
 exports.getReferredUsers = async (req, res) => {
   const { code } = req.query;
-  if (!code) return res.status(400).json({ message: "Referral code is required" });
+  if (!code)
+    return res.status(400).json({ message: "Referral code is required" });
 
   try {
     const users = await User.find({ referredBy: code });
 
     res.json(
-      users.map(u => ({
+      users.map((u) => ({
         _id: u._id,
         email: u.email,
         username: u.username,
         createdAt: u.createdAt,
-      }))
+      })),
     );
   } catch (err) {
     console.error("Get referred users error:", err);
@@ -315,7 +393,12 @@ const toggleWithdrawLock = async (req, res) => {
     user.isWithdrawLocked = !user.isWithdrawLocked;
     await user.save();
 
-    res.status(200).json({ message: "Withdrawal lock toggled", isWithdrawLocked: user.isWithdrawLocked });
+    res
+      .status(200)
+      .json({
+        message: "Withdrawal lock toggled",
+        isWithdrawLocked: user.isWithdrawLocked,
+      });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -379,10 +462,14 @@ exports.addPoolAddress = async (req, res) => {
   } catch (err) {
     // duplicate key (unique index on address+coin+network)
     if (err?.code === 11000) {
-      return res.status(409).json({ message: "Address already exists in pool" });
+      return res
+        .status(409)
+        .json({ message: "Address already exists in pool" });
     }
     console.error("addPoolAddress error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
 
@@ -415,7 +502,9 @@ exports.bulkAddPoolAddresses = async (req, res) => {
         return res.status(400).json({ message: "Invalid coin in items[]" });
       }
       if (!p.network) {
-        return res.status(400).json({ message: "Network is required in items[]" });
+        return res
+          .status(400)
+          .json({ message: "Network is required in items[]" });
       }
     }
 
@@ -444,7 +533,9 @@ exports.bulkAddPoolAddresses = async (req, res) => {
     }
 
     console.error("bulkAddPoolAddresses error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
 
@@ -453,19 +544,26 @@ exports.listPoolAddresses = async (req, res) => {
   try {
     const { coin, network, status } = req.query;
     const page = Math.max(parseInt(req.query.page || "1", 10), 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit || "50", 10), 1),
+      200,
+    );
 
     const filter = {};
     if (coin) {
       const normalizedCoin = normalizeCoin(coin);
-      if (!normalizedCoin) return res.status(400).json({ message: "Invalid coin" });
+      if (!normalizedCoin)
+        return res.status(400).json({ message: "Invalid coin" });
       filter.coin = normalizedCoin;
     }
     if (network) filter.network = String(network).trim();
     if (status) filter.status = status;
 
     const [items, total, counts] = await Promise.all([
-      Wallet.find(filter).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
+      Wallet.find(filter)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
       Wallet.countDocuments(filter),
       Wallet.aggregate([
         { $match: filter },
@@ -483,7 +581,9 @@ exports.listPoolAddresses = async (req, res) => {
     });
   } catch (err) {
     console.error("listPoolAddresses error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
 
@@ -495,17 +595,21 @@ exports.disablePoolAddress = async (req, res) => {
     const updated = await Wallet.findOneAndUpdate(
       { _id: id, status: { $ne: "assigned" } }, // don't disable if already assigned
       { $set: { status: "disabled" } },
-      { new: true }
+      { new: true },
     );
 
     if (!updated) {
-      return res.status(404).json({ message: "Not found, or already assigned (cannot disable)." });
+      return res
+        .status(404)
+        .json({ message: "Not found, or already assigned (cannot disable)." });
     }
 
     return res.json({ success: true, wallet: updated });
   } catch (err) {
     console.error("disablePoolAddress error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
 
@@ -517,7 +621,7 @@ exports.enablePoolAddress = async (req, res) => {
     const updated = await Wallet.findOneAndUpdate(
       { _id: id, status: "disabled" },
       { $set: { status: "available", assignedTo: null, assignedAt: null } },
-      { new: true }
+      { new: true },
     );
 
     if (!updated) {
@@ -527,7 +631,9 @@ exports.enablePoolAddress = async (req, res) => {
     return res.json({ success: true, wallet: updated });
   } catch (err) {
     console.error("enablePoolAddress error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
 
@@ -546,7 +652,10 @@ exports.adminListOpenOrders = async (req, res) => {
   try {
     const { userId, instId } = req.query;
     const page = Math.max(parseInt(req.query.page || "1", 10), 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit || "50", 10), 1),
+      200,
+    );
 
     const filter = { status: "open", type: "limit" };
 
@@ -575,10 +684,11 @@ exports.adminListOpenOrders = async (req, res) => {
     });
   } catch (err) {
     console.error("adminListOpenOrders error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
-
 
 /**
  * GET /api/admin/orders/completed
@@ -598,7 +708,10 @@ exports.adminListCompletedOrders = async (req, res) => {
 
     const { userId, instId } = req.query;
     const page = Math.max(parseInt(req.query.page || "1", 10), 1);
-    const limit = Math.min(Math.max(parseInt(req.query.limit || "50", 10), 1), 200);
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit || "50", 10), 1),
+      200,
+    );
 
     const q = {};
 
@@ -632,7 +745,9 @@ exports.adminListCompletedOrders = async (req, res) => {
     });
   } catch (err) {
     console.error("adminListCompletedOrders (Trade) error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
 
@@ -656,21 +771,23 @@ exports.adminCancelOrder = async (req, res) => {
     const order = await Order.findOneAndUpdate(
       { _id: orderId, status: "open" },
       { $set: { status: "cancelled", cancelReason: reason } },
-      { new: true }
+      { new: true },
     );
 
     if (!order) {
       // If not open, check if it exists (better message)
       const exists = await Order.exists({ _id: orderId });
       if (!exists) return res.status(404).json({ message: "Order not found" });
-      return res.status(409).json({ message: "Order is not open (already filled/cancelled)" });
+      return res
+        .status(409)
+        .json({ message: "Order is not open (already filled/cancelled)" });
     }
 
     // Unlock funds
     await Balance.updateOne(
       { userId: order.userId, asset: order.lockedAsset },
       { $inc: { available: order.lockedAmount, locked: -order.lockedAmount } },
-      { upsert: true }
+      { upsert: true },
     );
 
     return res.json({
@@ -681,10 +798,11 @@ exports.adminCancelOrder = async (req, res) => {
     });
   } catch (err) {
     console.error("adminCancelOrder error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
-
 
 /**
  * POST /api/admin/users/:userId/orders/force-cancel
@@ -696,7 +814,9 @@ exports.adminCancelOrder = async (req, res) => {
 exports.adminForceCancelUserOrders = async (req, res) => {
   try {
     const { userId } = req.params;
-    const instId = req.body?.instId ? String(req.body.instId).trim().toUpperCase() : null;
+    const instId = req.body?.instId
+      ? String(req.body.instId).trim().toUpperCase()
+      : null;
     const reason = String(req.body?.reason || "Force-cancel by admin");
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
@@ -706,10 +826,16 @@ exports.adminForceCancelUserOrders = async (req, res) => {
     const filter = { userId, status: "open" };
     if (instId) filter.instId = instId;
 
-    const openOrders = await Order.find(filter).select("_id userId lockedAsset lockedAmount instId");
+    const openOrders = await Order.find(filter).select(
+      "_id userId lockedAsset lockedAmount instId",
+    );
 
     if (openOrders.length === 0) {
-      return res.json({ ok: true, cancelledCount: 0, message: "No open orders to cancel" });
+      return res.json({
+        ok: true,
+        cancelledCount: 0,
+        message: "No open orders to cancel",
+      });
     }
 
     let cancelledCount = 0;
@@ -720,7 +846,7 @@ exports.adminForceCancelUserOrders = async (req, res) => {
       const updated = await Order.findOneAndUpdate(
         { _id: o._id, status: "open" },
         { $set: { status: "cancelled", cancelReason: reason } },
-        { new: true }
+        { new: true },
       );
 
       if (!updated) continue;
@@ -729,8 +855,13 @@ exports.adminForceCancelUserOrders = async (req, res) => {
 
       await Balance.updateOne(
         { userId: updated.userId, asset: updated.lockedAsset },
-        { $inc: { available: updated.lockedAmount, locked: -updated.lockedAmount } },
-        { upsert: true }
+        {
+          $inc: {
+            available: updated.lockedAmount,
+            locked: -updated.lockedAmount,
+          },
+        },
+        { upsert: true },
       );
 
       unlockedTotals[updated.lockedAsset] =
@@ -745,7 +876,9 @@ exports.adminForceCancelUserOrders = async (req, res) => {
     });
   } catch (err) {
     console.error("adminForceCancelUserOrders error:", err);
-    return res.status(500).json({ message: "Server error", error: err.message });
+    return res
+      .status(500)
+      .json({ message: "Server error", error: err.message });
   }
 };
 
@@ -755,7 +888,9 @@ exports.getMarketOverride = async (req, res) => {
     const doc = await MarketOverride.findOne({ instId: "NEX-USDT" }).lean();
     return res.json({ ok: true, data: doc || null });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: "Failed to read override" });
+    return res
+      .status(500)
+      .json({ ok: false, error: "Failed to read override" });
   }
 };
 
@@ -764,7 +899,10 @@ exports.getMarketOverride = async (req, res) => {
 exports.startMarketOverride = async (req, res) => {
   try {
     const fixedPrice = Number(req.body.fixedPrice);
-    const minutes = Math.max(1, Math.min(Number(req.body.minutes) || 0, 7 * 24 * 60));
+    const minutes = Math.max(
+      1,
+      Math.min(Number(req.body.minutes) || 0, 7 * 24 * 60),
+    );
     const band = Number(req.body.band ?? 0.5);
     const stepMin = Number(req.body.stepMin ?? 0.01);
     const stepMax = Number(req.body.stepMax ?? 0.06);
@@ -791,7 +929,15 @@ exports.startMarketOverride = async (req, res) => {
       fixedPrice,
       wickPct: 0.001,
       blendMinutes: 5,
-      band, stepMin, stepMax, flipProb, meanRevert, shockProb, shockSize, volMin, volMax,
+      band,
+      stepMin,
+      stepMax,
+      flipProb,
+      meanRevert,
+      shockProb,
+      shockSize,
+      volMin,
+      volMax,
       rampMs: Number(req.body.rampMs ?? 8000),
       startPrice: null,
       startAt: now,
@@ -802,12 +948,14 @@ exports.startMarketOverride = async (req, res) => {
     const doc = await MarketOverride.findOneAndUpdate(
       { instId: "NEX-USDT" },
       { $set: update },
-      { upsert: true, new: true }
+      { upsert: true, new: true },
     ).lean();
 
     return res.json({ ok: true, data: doc });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: "Failed to start override" });
+    return res
+      .status(500)
+      .json({ ok: false, error: "Failed to start override" });
   }
 };
 
@@ -825,11 +973,13 @@ exports.stopMarketOverride = async (req, res) => {
     const doc = await MarketOverride.findOneAndUpdate(
       { instId: "NEX-USDT" },
       { $set: set },
-      { new: true }
+      { new: true },
     ).lean();
 
     return res.json({ ok: true, data: doc || null });
   } catch (e) {
-    return res.status(500).json({ ok: false, error: "Failed to stop override" });
+    return res
+      .status(500)
+      .json({ ok: false, error: "Failed to stop override" });
   }
 };

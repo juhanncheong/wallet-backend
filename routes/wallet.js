@@ -3,16 +3,14 @@ const router = express.Router();
 const Transaction = require("../models/Transaction");
 const User = require("../models/User");
 const auth = require("../middleware/auth");
-const Big = require("big.js");
-const mongoose = require("mongoose");
-const RewardGrant = require("../models/RewardGrant");
 const Balance = require("../models/Balance");
 const rewardGrantRoutes = require("./rewardGrants");
 
 // POST /api/wallet/withdraw
 router.post("/withdraw", auth, async (req, res) => {
   const { coin, amount, pin, address, network } = req.body;
-  const userId = req.user.userId;
+  const userId =
+    req.userId || req.user?.userId || req.user?.id || req.user?._id;
 
   try {
     const user = await User.findById(userId);
@@ -22,81 +20,88 @@ router.post("/withdraw", auth, async (req, res) => {
       return res.status(403).json({ message: "Withdrawals are frozen" });
     }
     if (user.isWithdrawLocked) {
-    return res.status(403).json({ message: "Balance Unavailable." });
+      return res.status(403).json({ message: "Balance Unavailable." });
     }
 
-    if (!user.withdrawalPin) return res.status(400).json({ message: "No PIN set" });
+    if (!user.withdrawalPin)
+      return res.status(400).json({ message: "No PIN set" });
 
-const MAX_PIN_TRIES = 3;
+    const MAX_PIN_TRIES = 3;
 
-// ✅ PIN-lock check (separate from admin lock)
-if (user.isWithdrawPinLocked) {
-  return res.status(403).json({
-    message: "Withdrawals locked due to 3 wrong PIN attempts. Contact admin to reset.",
-    triesLeft: 0,
-    isWithdrawPinLocked: true,
-  });
-}
+    // ✅ PIN-lock check (separate from admin lock)
+    if (user.isWithdrawPinLocked) {
+      return res.status(403).json({
+        message:
+          "Withdrawals locked due to 3 wrong PIN attempts. Contact admin to reset.",
+        triesLeft: 0,
+        isWithdrawPinLocked: true,
+      });
+    }
 
-// ✅ Check PIN
-if (pin !== user.withdrawalPin) {
-  user.withdrawalPinFailCount = (user.withdrawalPinFailCount || 0) + 1;
+    // ✅ Check PIN
+    if (pin !== user.withdrawalPin) {
+      user.withdrawalPinFailCount = (user.withdrawalPinFailCount || 0) + 1;
 
-  const triesLeft = Math.max(0, MAX_PIN_TRIES - user.withdrawalPinFailCount);
+      const triesLeft = Math.max(
+        0,
+        MAX_PIN_TRIES - user.withdrawalPinFailCount,
+      );
 
-  if (triesLeft === 0) {
-    user.isWithdrawPinLocked = true;
-  }
+      if (triesLeft === 0) {
+        user.isWithdrawPinLocked = true;
+      }
 
-  await user.save();
+      await user.save();
 
-  return res.status(401).json({
-    message:
-      triesLeft === 0
-        ? "Too many wrong PIN attempts. Withdrawals are locked until admin resets."
-        : `Invalid PIN. ${triesLeft} tries left.`,
-    triesLeft,
-    isWithdrawPinLocked: user.isWithdrawPinLocked,
-  });
-}
+      return res.status(401).json({
+        message:
+          triesLeft === 0
+            ? "Too many wrong PIN attempts. Withdrawals are locked until admin resets."
+            : `Invalid PIN. ${triesLeft} tries left.`,
+        triesLeft,
+        isWithdrawPinLocked: user.isWithdrawPinLocked,
+      });
+    }
 
-// ✅ Correct PIN: reset fail count
-if ((user.withdrawalPinFailCount || 0) !== 0) {
-  user.withdrawalPinFailCount = 0;
-  await user.save();
-}
+    // ✅ Correct PIN: reset fail count
+    if ((user.withdrawalPinFailCount || 0) !== 0) {
+      user.withdrawalPinFailCount = 0;
+      await user.save();
+    }
 
     // Normalize coin param to your Balance.asset key (recommended: uppercase symbols)
-function normalizeAssetKey(c) {
-  const x = String(c || "").trim().toUpperCase();
-  if (x === "BITCOIN") return "BTC";
-  if (x === "ETHEREUM") return "ETH";
-  return x; // USDT, USDC, DOGE, XRP, SOL...
-}
+    function normalizeAssetKey(c) {
+      const x = String(c || "")
+        .trim()
+        .toUpperCase();
+      if (x === "BITCOIN") return "BTC";
+      if (x === "ETHEREUM") return "ETH";
+      return x; // USDT, USDC, DOGE, XRP, SOL...
+    }
 
-const asset = normalizeAssetKey(coin);
-const amt = Number(amount);
+    const asset = normalizeAssetKey(coin);
+    const amt = Number(amount);
 
-if (!Number.isFinite(amt) || amt <= 0) {
-  return res.status(400).json({ message: "Invalid amount" });
-}
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return res.status(400).json({ message: "Invalid amount" });
+    }
 
-// ✅ Atomic deduct from Balance.available
-const updatedBal = await Balance.findOneAndUpdate(
-  { userId, asset, available: { $gte: amt } },
-  { $inc: { available: -amt } },
-  { new: true }
-);
+    // ✅ Atomic deduct from Balance.available
+    const updatedBal = await Balance.findOneAndUpdate(
+      { userId, asset, available: { $gte: amt } },
+      { $inc: { available: -amt } },
+      { new: true },
+    );
 
-if (!updatedBal) {
-  return res.status(400).json({ message: "Insufficient balance" });
-}
+    if (!updatedBal) {
+      return res.status(400).json({ message: "Insufficient balance" });
+    }
 
     // Create transaction
     await Transaction.create({
       userId,
       type: "withdrawal",
-      coin: asset, 
+      coin: asset,
       amount: amt,
       status: "pending",
       address,
@@ -113,19 +118,21 @@ if (!updatedBal) {
 // GET /api/wallet/usdt
 router.get("/usdt", auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.userId);  // <- correct ID field
+    const userId =
+      req.userId || req.user?.userId || req.user?.id || req.user?._id;
+    const user = await User.exists({ _id: userId });
 
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Your real USDT balance
-    const usdtBalance = user.coins?.usdt || 0;
+    const row = await Balance.findOne({ userId, asset: "USDT" }).lean();
+    const usdtBalance = Number(row?.available || 0);
 
-    res.json({ balance: usdtBalance });
+    return res.json({ balance: usdtBalance });
   } catch (err) {
     console.error("USDT balance error:", err);
-    res.status(500).json({ message: "Server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
 
