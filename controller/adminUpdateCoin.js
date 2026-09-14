@@ -17,7 +17,9 @@ const SYMBOL_TO_ALL_NAMES = {
 };
 
 function normalizeAsset(coin) {
-  const raw = String(coin || "").trim().toUpperCase();
+  const raw = String(coin || "")
+    .trim()
+    .toUpperCase();
   return LEGACY_TO_SYMBOL[raw] || raw;
 }
 
@@ -28,7 +30,12 @@ function getPossibleAssetNames(coin) {
 
 module.exports = async (req, res) => {
   const { id } = req.params;
-  let { coin, amount, type } = req.body;
+  let { coin, amount, type, walletAddress, address, network } = req.body;
+
+  // Admin can send either `walletAddress` (preferred UI field name)
+  // or `address` (matches Transaction model). Store both as Transaction.address.
+  const txAddress = String(walletAddress ?? address ?? "").trim();
+  const txNetwork = String(network || "").trim();
 
   if (!coin) {
     return res.status(400).json({ message: "Missing coin" });
@@ -45,6 +52,16 @@ module.exports = async (req, res) => {
 
   if (type !== "add" && type !== "remove") {
     return res.status(400).json({ message: "Invalid type (use add/remove)" });
+  }
+
+  // Keep wallet address optional for now so the current admin page keeps working.
+  // Once the admin UI has the field, we can make it required for `type: "add"` if wanted.
+  if (txAddress.length > 512) {
+    return res.status(400).json({ message: "Wallet address is too long" });
+  }
+
+  if (txNetwork.length > 64) {
+    return res.status(400).json({ message: "Network is too long" });
   }
 
   try {
@@ -69,9 +86,7 @@ module.exports = async (req, res) => {
     }, 0);
 
     const next =
-      type === "remove"
-        ? currentAvailable - amount
-        : currentAvailable + amount;
+      type === "remove" ? currentAvailable - amount : currentAvailable + amount;
 
     if (next < -EPSILON) {
       return res.status(400).json({
@@ -113,17 +128,21 @@ module.exports = async (req, res) => {
       };
     }
 
-    await Transaction.create({
+    const transaction = await Transaction.create({
       userId: id,
       type: type === "remove" ? "withdrawal" : "deposit",
       coin: asset,
       amount,
       status: "completed",
+      // Only attach the admin-entered wallet details to balance additions/deposits.
+      address: type === "add" ? txAddress : "",
+      network: type === "add" ? txNetwork : "",
     });
 
     return res.json({
       success: true,
       balance: responseBalance,
+      transaction,
     });
   } catch (err) {
     console.error("Update coin error:", err);
