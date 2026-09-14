@@ -8,7 +8,7 @@ const MarketOverride = require("../models/MarketOverride");
 
 const OKX_BASE = "https://www.okx.com";
 
-// Node 18+ has fetch. If not, use node-fetch.
+// Node 18+ has fetch. If not, use node-fetch
 const fetchFn =
   global.fetch ||
   ((...args) => import("node-fetch").then(({ default: f }) => f(...args)));
@@ -28,7 +28,7 @@ async function lockOrSpendLocked(session, userId, asset, spendLockedAmount) {
   const res = await Balance.updateOne(
     { userId, asset, locked: { $gte: spendLockedAmount } },
     { $inc: { locked: -spendLockedAmount } },
-    { session }
+    { session },
   );
   if (res.modifiedCount !== 1) throw new Error("INSUFFICIENT_LOCKED");
 }
@@ -37,7 +37,7 @@ async function addAvailable(session, userId, asset, amount) {
   await Balance.updateOne(
     { userId, asset },
     { $inc: { available: amount } },
-    { upsert: true, session }
+    { upsert: true, session },
   );
 }
 
@@ -57,23 +57,23 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
     if (!openOrders.length) return;
 
     // Group by instId so we fetch OKX last once per pair
-    const uniqueInst = [...new Set(openOrders.map(o => o.instId))];
+    const uniqueInst = [...new Set(openOrders.map((o) => o.instId))];
 
     const lastByInst = {};
     await Promise.all(
       uniqueInst.map(async (instId) => {
-          const ov = await getActiveOverride(instId);
-    if (ov) {
-      lastByInst[instId] = Number(ov.fixedPrice);
-      return;
-    }
+        const ov = await getActiveOverride(instId);
+        if (ov) {
+          lastByInst[instId] = Number(ov.fixedPrice);
+          return;
+        }
         const okxInstId = pairMapping[instId] || instId; // <-- add this line
         try {
           lastByInst[instId] = await fetchOkxLast(okxInstId); // <-- use okxInstId
         } catch {
           lastByInst[instId] = null;
         }
-      })
+      }),
     );
 
     // Process in order
@@ -92,7 +92,10 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
       try {
         await session.withTransaction(async () => {
           // Re-read order inside txn to avoid double fill
-          const ord = await Order.findOne({ _id: o._id, status: "open" }).session(session);
+          const ord = await Order.findOne({
+            _id: o._id,
+            status: "open",
+          }).session(session);
           if (!ord) return; // already filled/cancelled elsewhere
 
           const userId = ord.userId;
@@ -104,7 +107,8 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
           const limitPrice = Number(ord.price);
           const feeRate = Number(ord.feeRate ?? 0.001);
 
-          if (!(amountBase > 0) || !(limitPrice > 0)) throw new Error("BAD_ORDER");
+          if (!(amountBase > 0) || !(limitPrice > 0))
+            throw new Error("BAD_ORDER");
 
           // NOTE: Fill price choice:
           // MVP: use current last for trade record, but settle at ord.price to match user's expectation.
@@ -129,23 +133,27 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
             await ord.save({ session });
 
             // Save trade record
-            await Trade.create([{
-              userId,
-              instId,
-              base,
-              quote,
-              side: "buy",
-              type: "limit",
-              price: fillPrice,
-              amountBase,
-              feeRate,
-              feeAsset: base,
-              feeAmount: feeBase,
-              grossQuote,
-              netQuote: grossQuote,  // for buy, quote spent = grossQuote
-              netBase,
-            }], { session });
-
+            await Trade.create(
+              [
+                {
+                  userId,
+                  instId,
+                  base,
+                  quote,
+                  side: "buy",
+                  type: "limit",
+                  price: fillPrice,
+                  amountBase,
+                  feeRate,
+                  feeAsset: base,
+                  feeAmount: feeBase,
+                  grossQuote,
+                  netQuote: grossQuote, // for buy, quote spent = grossQuote
+                  netBase,
+                },
+              ],
+              { session },
+            );
           } else {
             // SELL
             // Spend locked BASE = amountBase
@@ -162,22 +170,27 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
             ord.status = "filled";
             await ord.save({ session });
 
-            await Trade.create([{
-              userId,
-              instId,
-              base,
-              quote,
-              side: "sell",
-              type: "limit",
-              price: fillPrice,
-              amountBase,
-              feeRate,
-              feeAsset: quote,
-              feeAmount: feeQuote,
-              grossQuote,
-              netQuote,
-              netBase: amountBase, // for sell, base sold = amountBase
-            }], { session });
+            await Trade.create(
+              [
+                {
+                  userId,
+                  instId,
+                  base,
+                  quote,
+                  side: "sell",
+                  type: "limit",
+                  price: fillPrice,
+                  amountBase,
+                  feeRate,
+                  feeAsset: quote,
+                  feeAmount: feeQuote,
+                  grossQuote,
+                  netQuote,
+                  netBase: amountBase, // for sell, base sold = amountBase
+                },
+              ],
+              { session },
+            );
           }
         });
       } catch (e) {
@@ -194,7 +207,10 @@ async function matchLimitOrdersOnce({ batch = 200 } = {}) {
 
 async function getActiveOverride(instId) {
   if (instId !== "NEX-USDT") return null;
-  const doc = await MarketOverride.findOne({ instId: "NEX-USDT", isActive: true }).lean();
+  const doc = await MarketOverride.findOne({
+    instId: "NEX-USDT",
+    isActive: true,
+  }).lean();
   if (!doc) return null;
   if (doc.endAt && new Date(doc.endAt).getTime() <= Date.now()) return null;
   return doc;
