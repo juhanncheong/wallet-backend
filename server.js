@@ -37,6 +37,7 @@ const depositRoutes = require("./routes/deposit");
 const chatRoutes = require("./routes/chat.routes");
 const p2pRoutes = require("./routes/p2p");
 const adminP2PRoutes = require("./routes/adminP2P");
+const p2pChatRoutes = require("./routes/p2pChat.routes");
 const uploadRoutes = require("./routes/upload.routes");
 
 // Background services
@@ -218,6 +219,7 @@ app.use("/api/kyc", kycRoutes);
 app.use("/api/admin/kyc", adminKycRoutes);
 app.use("/api/deposit", depositRoutes);
 app.use("/api/chat", chatRoutes);
+app.use("/api/p2p/chat", p2pChatRoutes);
 app.use("/api/p2p", p2pRoutes);
 
 // -----------------------------------------------------------------------------
@@ -409,7 +411,9 @@ const io = new Server(server, {
   pingTimeout: 20000,
 });
 
+app.set("io", io);
 require("./sockets/chat.socket")(io);
+require("./sockets/p2pChat.socket")(io);
 
 // -----------------------------------------------------------------------------
 // 404 + centralized error handling
