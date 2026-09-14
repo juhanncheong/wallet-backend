@@ -7,7 +7,7 @@ const Input = React.forwardRef(({ className = "", type = "text", ...props }, ref
       type={type}
       ref={ref}
       {...props}
-      className={`flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed ${className}`}
+      className={`w-full bg-white text-black dark:bg-gray-800 dark:text-white border dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 rounded px-3 py-2 ${className}`}
     />
   );
 });
