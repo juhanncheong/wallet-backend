@@ -941,6 +941,69 @@ async function settleEscrow({ sellerId, buyerId, amount, session }) {
   return { sellerBalance, buyerBalance };
 }
 
+// P2P-only escrow summary for the wallet UI.
+// IMPORTANT: Balance.locked is shared by multiple products (for example Spot
+// limit orders), so the P2P page must never display Balance.locked as if all of
+// it belongs to P2P. This derives only the amount currently owned by P2P.
+async function getUserP2PEscrow(userId) {
+  const openOrderStatuses = ["awaiting_payment", "paid", "appealed"];
+
+  const [sellAds, buyAdOrders] = await Promise.all([
+    P2PAdvertisement.find({
+      advertiserId: userId,
+      side: "SELL",
+      $or: [
+        { status: { $in: ["active", "paused"] } },
+        { openOrderUsdt: { $gt: 0 } },
+      ],
+    })
+      .select("status remainingUsdt openOrderUsdt")
+      .lean(),
+    P2POrder.find({
+      sellerId: userId,
+      adSide: "BUY",
+      status: { $in: openOrderStatuses },
+    })
+      .select("usdtAmount")
+      .lean(),
+  ]);
+
+  let sellAdEscrow = new Big(0);
+  for (const ad of sellAds) {
+    if (["active", "paused"].includes(ad.status)) {
+      sellAdEscrow = sellAdEscrow.plus(
+        toBig(ad.remainingUsdt || 0, "remaining SELL advertisement USDT"),
+      );
+    }
+
+    // Allocated SELL-ad orders remain part of the original advertisement
+    // reservation until they are completed, cancelled, expired, or resolved.
+    sellAdEscrow = sellAdEscrow.plus(
+      toBig(ad.openOrderUsdt || 0, "open SELL order USDT"),
+    );
+  }
+
+  let buyOrderEscrow = new Big(0);
+  for (const order of buyAdOrders) {
+    // For BUY advertisements, the taker/seller locks USDT per order.
+    buyOrderEscrow = buyOrderEscrow.plus(
+      toBig(order.usdtAmount || 0, "BUY advertisement order USDT"),
+    );
+  }
+
+  const sellRounded = sellAdEscrow.round(USDT_DECIMALS, Big.roundHalfUp);
+  const buyRounded = buyOrderEscrow.round(USDT_DECIMALS, Big.roundHalfUp);
+  const totalRounded = sellRounded
+    .plus(buyRounded)
+    .round(USDT_DECIMALS, Big.roundHalfUp);
+
+  return {
+    escrowUsdt: toSafeNumber(totalRounded, "P2P escrow"),
+    sellAdEscrowUsdt: toSafeNumber(sellRounded, "SELL advertisement escrow"),
+    buyOrderEscrowUsdt: toSafeNumber(buyRounded, "BUY order escrow"),
+  };
+}
+
 // ============================================================
 // services/p2pAdService.js
 // ============================================================
@@ -3204,6 +3267,7 @@ module.exports = {
   setAdvertisementStatus,
 
   // Orders / escrow
+  getUserP2PEscrow,
   createOrder,
   listMyOrders,
   getOrderForUser,

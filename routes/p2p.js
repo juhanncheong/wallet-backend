@@ -61,6 +61,16 @@ router.get(
   }),
 );
 
+// P2P-only escrow. Do not use Balance.locked here because that field is
+// shared with other products such as Spot limit orders.
+router.get(
+  "/escrow/me",
+  route(async (req, res) => {
+    const data = await p2p.getUserP2PEscrow(req.userId);
+    res.json({ data });
+  }),
+);
+
 // Payment methods
 router.get(
   "/payment-methods",
@@ -146,7 +156,8 @@ router.get(
   "/ads/:adId",
   route(async (req, res) => {
     const data = await p2p.getAdvertisement(req.params.adId);
-    if (!data) throw new p2p.P2PError("Advertisement not found", 404, "AD_NOT_FOUND");
+    if (!data)
+      throw new p2p.P2PError("Advertisement not found", 404, "AD_NOT_FOUND");
     res.json({ data });
   }),
 );
