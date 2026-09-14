@@ -36,6 +36,7 @@ const adminKycRoutes = require("./routes/adminKyc");
 const depositRoutes = require("./routes/deposit");
 const chatRoutes = require("./routes/chat.routes");
 const p2pRoutes = require("./routes/p2p");
+const adminP2PRoutes = require("./routes/adminP2P");
 const uploadRoutes = require("./routes/upload.routes");
 
 // Background services
@@ -208,8 +209,10 @@ app.use("/api/withdrawals", withdrawalRoutes);
 
 // Balance is the single source of truth for wallet asset balances.
 app.use("/api/balances", balancesRoutes);
-app.use("/api/admin", adminBalanceRoutes);
 
+// Mount the more-specific P2P admin router before the general /api/admin routers.
+app.use("/api/admin/p2p", adminP2PRoutes);
+app.use("/api/admin", adminBalanceRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/kyc", kycRoutes);
 app.use("/api/admin/kyc", adminKycRoutes);

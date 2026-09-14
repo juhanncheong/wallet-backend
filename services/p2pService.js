@@ -2507,6 +2507,680 @@ async function createReview(userId, orderId, payload = {}) {
   return P2PReview.findById(reviewId).lean();
 }
 
+// ============================================================
+// Admin P2P operations
+// ============================================================
+
+function adminPagination(page = 1, limit = 100) {
+  const safePage = Math.max(1, Number(page) || 1);
+  const safeLimit = Math.min(250, Math.max(1, Number(limit) || 100));
+  return { safePage, safeLimit };
+}
+
+function adminNormalizeStatus(value) {
+  return String(value || "").trim();
+}
+
+async function adminGetOverview() {
+  const openOrderStatuses = ["awaiting_payment", "paid", "appealed"];
+  const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+  const [
+    activeAds,
+    openOrders,
+    openAppeals,
+    frozenUsers,
+    completed24h,
+    sellAdEscrow,
+    buyOrderEscrow,
+  ] = await Promise.all([
+    P2PAdvertisement.countDocuments({
+      status: "active",
+      remainingUsdt: { $gt: 0 },
+    }),
+    P2POrder.countDocuments({ status: { $in: openOrderStatuses } }),
+    P2PDispute.countDocuments({ status: "OPEN" }),
+    P2PProfile.countDocuments({ p2pFrozen: true }),
+    P2POrder.countDocuments({
+      status: "completed",
+      completedAt: { $gte: since24h },
+    }),
+    P2PAdvertisement.aggregate([
+      {
+        $match: {
+          side: "SELL",
+          $or: [
+            { status: { $in: ["active", "paused"] } },
+            { openOrderUsdt: { $gt: 0 } },
+          ],
+        },
+      },
+      {
+        $project: {
+          locked: {
+            $add: [
+              {
+                $cond: [
+                  { $in: ["$status", ["active", "paused"]] },
+                  { $ifNull: ["$remainingUsdt", 0] },
+                  0,
+                ],
+              },
+              { $ifNull: ["$openOrderUsdt", 0] },
+            ],
+          },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$locked" } } },
+    ]),
+    P2POrder.aggregate([
+      {
+        $match: {
+          adSide: "BUY",
+          status: { $in: openOrderStatuses },
+        },
+      },
+      { $group: { _id: null, total: { $sum: "$usdtAmount" } } },
+    ]),
+  ]);
+
+  const sellLocked = Number(sellAdEscrow?.[0]?.total || 0);
+  const buyLocked = Number(buyOrderEscrow?.[0]?.total || 0);
+
+  return {
+    activeAds,
+    openOrders,
+    openAppeals,
+    frozenUsers,
+    completed24h,
+    escrowUsdt: toSafeNumber(
+      toBig(sellLocked, "sell escrow").plus(toBig(buyLocked, "buy escrow")),
+      "P2P escrow",
+    ),
+  };
+}
+
+async function adminListAdvertisements({
+  status,
+  side,
+  fiatCurrency,
+  page = 1,
+  limit = 100,
+} = {}) {
+  const { safePage, safeLimit } = adminPagination(page, limit);
+  const filter = {};
+
+  if (status) {
+    const normalized = String(status).trim().toLowerCase();
+    if (!["active", "paused", "filled", "cancelled"].includes(normalized)) {
+      throw new P2PError(
+        "Invalid advertisement status",
+        400,
+        "INVALID_AD_STATUS",
+      );
+    }
+    filter.status = normalized;
+  }
+
+  if (side) filter.side = normalizeSide(side);
+  if (fiatCurrency) filter.fiatCurrency = normalizeCurrency(fiatCurrency);
+
+  const [ads, total] = await Promise.all([
+    P2PAdvertisement.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit)
+      .lean(),
+    P2PAdvertisement.countDocuments(filter),
+  ]);
+
+  const userIds = [...new Set(ads.map((ad) => String(ad.advertiserId)))];
+  const users = userIds.length
+    ? await User.find({ _id: { $in: userIds } })
+        .select("username email isFrozen")
+        .lean()
+    : [];
+  const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+  return {
+    data: ads.map((ad) => ({
+      ...ad,
+      advertiser: userMap.get(String(ad.advertiserId)) || null,
+    })),
+    total,
+    page: safePage,
+    limit: safeLimit,
+    totalPages: Math.max(1, Math.ceil(total / safeLimit)),
+  };
+}
+
+async function adminListOrders({
+  status,
+  fiatCurrency,
+  page = 1,
+  limit = 100,
+} = {}) {
+  const { safePage, safeLimit } = adminPagination(page, limit);
+  const filter = {};
+
+  if (status) {
+    const normalized = String(status).trim().toLowerCase();
+    if (
+      ![
+        "awaiting_payment",
+        "paid",
+        "completed",
+        "cancelled",
+        "expired",
+        "appealed",
+      ].includes(normalized)
+    ) {
+      throw new P2PError("Invalid order status", 400, "INVALID_ORDER_STATUS");
+    }
+    filter.status = normalized;
+  }
+
+  if (fiatCurrency) filter.fiatCurrency = normalizeCurrency(fiatCurrency);
+
+  const [orders, total] = await Promise.all([
+    P2POrder.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit)
+      .lean(),
+    P2POrder.countDocuments(filter),
+  ]);
+
+  const ids = [
+    ...new Set(
+      orders
+        .flatMap((o) => [o.buyerId, o.sellerId, o.advertiserId, o.takerId])
+        .filter(Boolean)
+        .map(String),
+    ),
+  ];
+
+  const users = ids.length
+    ? await User.find({ _id: { $in: ids } })
+        .select("username email isFrozen")
+        .lean()
+    : [];
+  const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+  return {
+    data: orders.map((order) => ({
+      ...order,
+      buyer: userMap.get(String(order.buyerId)) || null,
+      seller: userMap.get(String(order.sellerId)) || null,
+      advertiser: userMap.get(String(order.advertiserId)) || null,
+      taker: userMap.get(String(order.takerId)) || null,
+    })),
+    total,
+    page: safePage,
+    limit: safeLimit,
+    totalPages: Math.max(1, Math.ceil(total / safeLimit)),
+  };
+}
+
+async function adminListDisputes({ status, page = 1, limit = 100 } = {}) {
+  const { safePage, safeLimit } = adminPagination(page, limit);
+  const filter = {};
+
+  if (status) {
+    const normalized = String(status).trim().toUpperCase();
+    if (
+      !["OPEN", "RESOLVED_BUYER", "RESOLVED_SELLER", "CLOSED"].includes(
+        normalized,
+      )
+    ) {
+      throw new P2PError("Invalid appeal status", 400, "INVALID_APPEAL_STATUS");
+    }
+    filter.status = normalized;
+  }
+
+  const [disputes, total] = await Promise.all([
+    P2PDispute.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit)
+      .lean(),
+    P2PDispute.countDocuments(filter),
+  ]);
+
+  const orderIds = [...new Set(disputes.map((d) => String(d.orderId)))];
+  const openedByIds = [...new Set(disputes.map((d) => String(d.openedById)))];
+
+  const [orders, users] = await Promise.all([
+    orderIds.length
+      ? P2POrder.find({ _id: { $in: orderIds } })
+          .select(
+            "reference buyerId sellerId fiatCurrency price usdtAmount fiatAmount status createdAt paidAt appealedAt",
+          )
+          .lean()
+      : [],
+    openedByIds.length
+      ? User.find({ _id: { $in: openedByIds } })
+          .select("username email")
+          .lean()
+      : [],
+  ]);
+
+  const orderMap = new Map(orders.map((o) => [String(o._id), o]));
+  const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+  return {
+    data: disputes.map((dispute) => ({
+      ...dispute,
+      order: orderMap.get(String(dispute.orderId)) || null,
+      openedBy: userMap.get(String(dispute.openedById)) || null,
+    })),
+    total,
+    page: safePage,
+    limit: safeLimit,
+    totalPages: Math.max(1, Math.ceil(total / safeLimit)),
+  };
+}
+
+async function adminListProfiles({ page = 1, limit = 100 } = {}) {
+  const { safePage, safeLimit } = adminPagination(page, limit);
+
+  const [profiles, total] = await Promise.all([
+    P2PProfile.find({})
+      .sort({ updatedAt: -1 })
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit)
+      .lean(),
+    P2PProfile.countDocuments({}),
+  ]);
+
+  const userIds = [...new Set(profiles.map((p) => String(p.userId)))];
+  const users = userIds.length
+    ? await User.find({ _id: { $in: userIds } })
+        .select("username email isFrozen createdAt")
+        .lean()
+    : [];
+  const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+  return {
+    data: profiles.map((profile) => ({
+      ...profile,
+      user: userMap.get(String(profile.userId)) || null,
+      completionRate: completionRate(profile),
+      positiveRate: positiveRate(profile),
+    })),
+    total,
+    page: safePage,
+    limit: safeLimit,
+    totalPages: Math.max(1, Math.ceil(total / safeLimit)),
+  };
+}
+
+async function adminSetAdvertisementStatus(adminId, adId, nextStatusInput) {
+  if (!mongoose.isValidObjectId(adId)) {
+    throw new P2PError("Advertisement not found", 404, "AD_NOT_FOUND");
+  }
+
+  const nextStatus = String(nextStatusInput || "")
+    .trim()
+    .toLowerCase();
+
+  if (!["active", "paused", "cancelled"].includes(nextStatus)) {
+    throw new P2PError(
+      "Admin can set advertisement status only to active, paused, or cancelled",
+      400,
+      "INVALID_AD_STATUS",
+    );
+  }
+
+  return withMongoTransaction(async (session) => {
+    const ad = await P2PAdvertisement.findById(adId).session(session);
+    if (!ad) throw new P2PError("Advertisement not found", 404, "AD_NOT_FOUND");
+
+    const previousStatus = ad.status;
+    if (previousStatus === nextStatus) return ad.toObject();
+
+    if (nextStatus === "paused") {
+      if (ad.status !== "active") {
+        throw new P2PError(
+          "Only an active advertisement can be paused",
+          409,
+          "AD_NOT_ACTIVE",
+        );
+      }
+      ad.status = "paused";
+    } else if (nextStatus === "active") {
+      if (ad.status !== "paused") {
+        throw new P2PError(
+          "Only a paused advertisement can be resumed",
+          409,
+          "AD_NOT_PAUSED",
+        );
+      }
+
+      await ensureEligible(ad.advertiserId, { session });
+
+      if (Number(ad.remainingUsdt || 0) <= 0) {
+        throw new P2PError(
+          "Advertisement has no remaining amount",
+          409,
+          "AD_EMPTY",
+        );
+      }
+
+      ad.status = "active";
+    } else {
+      if (!["active", "paused"].includes(ad.status)) {
+        throw new P2PError(
+          "Advertisement cannot be cancelled in its current state",
+          409,
+          "AD_NOT_CANCELLABLE",
+        );
+      }
+
+      const unfilled = Number(ad.remainingUsdt || 0);
+      ad.cancelledUnfilledUsdt = unfilled;
+      ad.remainingUsdt = 0;
+      ad.status = "cancelled";
+
+      if (ad.side === "SELL" && unfilled > 0) {
+        const balance = await unlockUsdt(ad.advertiserId, unfilled, session);
+
+        await appendLedgerEvent(
+          {
+            userId: ad.advertiserId,
+            adId: ad._id,
+            eventType: "AD_UNLOCK",
+            amount: unfilled,
+            availableDelta: unfilled,
+            lockedDelta: -unfilled,
+            availableAfter: balance.available,
+            lockedAfter: balance.locked,
+            metadata: {
+              reason: "ADMIN_CANCELLED_AD",
+              adminId: String(adminId),
+            },
+          },
+          session,
+        );
+      }
+    }
+
+    await ad.save({ session });
+
+    await appendLedgerEvent(
+      {
+        userId: ad.advertiserId,
+        adId: ad._id,
+        eventType: "ADMIN_AD_STATUS_CHANGE",
+        amount: 0,
+        metadata: {
+          adminId: String(adminId),
+          previousStatus,
+          nextStatus: ad.status,
+        },
+      },
+      session,
+    );
+
+    return ad.toObject();
+  });
+}
+
+async function adminSetP2PFreeze(adminId, userId, frozenInput, reason = "") {
+  if (!mongoose.isValidObjectId(userId)) {
+    throw new P2PError("User not found", 404, "USER_NOT_FOUND");
+  }
+
+  if (typeof frozenInput !== "boolean") {
+    throw new P2PError(
+      "frozen must be true or false",
+      400,
+      "INVALID_FREEZE_FLAG",
+    );
+  }
+
+  const cleanReason = String(reason || "")
+    .trim()
+    .slice(0, 300);
+
+  return withMongoTransaction(async (session) => {
+    const user = await User.findById(userId)
+      .select("_id username")
+      .session(session);
+    if (!user) throw new P2PError("User not found", 404, "USER_NOT_FOUND");
+
+    const profile = await getOrCreateProfile(userId, session);
+
+    profile.p2pFrozen = frozenInput;
+    profile.freezeReason = frozenInput
+      ? cleanReason || "P2P access frozen by admin"
+      : "";
+
+    await profile.save({ session });
+
+    // Freeze removes the user's ads from the live marketplace immediately,
+    // while preserving SELL-ad escrow. Existing orders remain intact and can
+    // still be safely completed or appealed.
+    if (frozenInput) {
+      await P2PAdvertisement.updateMany(
+        { advertiserId: userId, status: "active" },
+        { $set: { status: "paused" } },
+        { session },
+      );
+    }
+
+    await appendLedgerEvent(
+      {
+        userId,
+        eventType: frozenInput ? "ADMIN_P2P_FREEZE" : "ADMIN_P2P_UNFREEZE",
+        amount: 0,
+        metadata: {
+          adminId: String(adminId),
+          reason: profile.freezeReason,
+        },
+      },
+      session,
+    );
+
+    return {
+      ...profile.toObject(),
+      user: {
+        _id: user._id,
+        username: user.username,
+      },
+      completionRate: completionRate(profile),
+      positiveRate: positiveRate(profile),
+    };
+  });
+}
+
+async function adminResolveDispute(adminId, disputeId, { winner, note } = {}) {
+  if (!mongoose.isValidObjectId(disputeId)) {
+    throw new P2PError("Appeal not found", 404, "APPEAL_NOT_FOUND");
+  }
+
+  const decision = String(winner || "")
+    .trim()
+    .toUpperCase();
+
+  if (!["BUYER", "SELLER"].includes(decision)) {
+    throw new P2PError(
+      "winner must be BUYER or SELLER",
+      400,
+      "INVALID_APPEAL_DECISION",
+    );
+  }
+
+  const resolutionNote = String(note || "").trim();
+  if (!resolutionNote) {
+    throw new P2PError(
+      "Admin resolution note is required",
+      400,
+      "RESOLUTION_NOTE_REQUIRED",
+    );
+  }
+  if (resolutionNote.length > 2000) {
+    throw new P2PError(
+      "Admin resolution note is too long",
+      400,
+      "RESOLUTION_NOTE_TOO_LONG",
+    );
+  }
+
+  let result;
+
+  await withMongoTransaction(async (session) => {
+    const dispute = await P2PDispute.findById(disputeId).session(session);
+    if (!dispute) {
+      throw new P2PError("Appeal not found", 404, "APPEAL_NOT_FOUND");
+    }
+
+    const resolvedStatus =
+      decision === "BUYER" ? "RESOLVED_BUYER" : "RESOLVED_SELLER";
+
+    // Safe against double-click/retry: same decision is idempotent.
+    if (dispute.status !== "OPEN") {
+      if (dispute.status === resolvedStatus) {
+        result = dispute.toObject();
+        return;
+      }
+
+      throw new P2PError(
+        "Appeal has already been resolved",
+        409,
+        "APPEAL_ALREADY_RESOLVED",
+      );
+    }
+
+    const order = await P2POrder.findById(dispute.orderId).session(session);
+    if (!order) {
+      throw new P2PError(
+        "P2P order record is missing",
+        409,
+        "ORDER_RECORD_MISSING",
+      );
+    }
+
+    if (order.status !== "appealed") {
+      throw new P2PError(
+        "Appealed order is not in the expected state",
+        409,
+        "APPEAL_ORDER_STATE_INVALID",
+      );
+    }
+
+    const ad = await P2PAdvertisement.findById(order.adId).session(session);
+    if (!ad) {
+      throw new P2PError(
+        "Advertisement record is missing",
+        409,
+        "AD_RECORD_MISSING",
+      );
+    }
+
+    if (decision === "BUYER") {
+      const balances = await settleEscrow({
+        sellerId: order.sellerId,
+        buyerId: order.buyerId,
+        amount: order.usdtAmount,
+        session,
+      });
+
+      order.status = "completed";
+      order.completedAt = new Date();
+      await order.save({ session });
+
+      await updateAdAfterTerminalOrder(order, session, {
+        restoreRemaining: false,
+      });
+
+      await appendLedgerEvent(
+        {
+          userId: order.sellerId,
+          adId: order.adId,
+          orderId: order._id,
+          eventType: "ADMIN_APPEAL_RELEASE_DEBIT",
+          amount: order.usdtAmount,
+          lockedDelta: -order.usdtAmount,
+          availableAfter: balances.sellerBalance.available,
+          lockedAfter: balances.sellerBalance.locked,
+          metadata: { adminId: String(adminId) },
+        },
+        session,
+      );
+
+      await appendLedgerEvent(
+        {
+          userId: order.buyerId,
+          adId: order.adId,
+          orderId: order._id,
+          eventType: "ADMIN_APPEAL_RELEASE_CREDIT",
+          amount: order.usdtAmount,
+          availableDelta: order.usdtAmount,
+          availableAfter: balances.buyerBalance.available,
+          lockedAfter: balances.buyerBalance.locked,
+          metadata: { adminId: String(adminId) },
+        },
+        session,
+      );
+
+      await recordCompleted(
+        [order.buyerId, order.sellerId],
+        order.usdtAmount,
+        session,
+      );
+    } else {
+      order.status = "cancelled";
+      order.cancelledAt = new Date();
+      order.cancelReason = "ADMIN_RESOLVED_SELLER";
+
+      await updateAdAfterTerminalOrder(order, session, {
+        restoreRemaining: true,
+      });
+
+      await releaseEscrowForCancelledOrder(
+        order,
+        ad,
+        session,
+        "ADMIN_RESOLVED_SELLER",
+      );
+
+      await order.save({ session });
+    }
+
+    dispute.status = resolvedStatus;
+    dispute.resolvedByAdminId = adminId;
+    dispute.resolutionNote = resolutionNote;
+    dispute.resolvedAt = new Date();
+    await dispute.save({ session });
+
+    for (const participantId of [order.buyerId, order.sellerId]) {
+      await appendLedgerEvent(
+        {
+          userId: participantId,
+          adId: order.adId,
+          orderId: order._id,
+          eventType: "APPEAL_RESOLVED",
+          amount: order.usdtAmount,
+          metadata: {
+            adminId: String(adminId),
+            winner: decision,
+            resolutionNote,
+          },
+        },
+        session,
+      );
+    }
+
+    result = {
+      dispute: dispute.toObject(),
+      order: order.toObject(),
+    };
+  });
+
+  return result;
+}
+
 module.exports = {
   P2PError,
 
@@ -2542,4 +3216,14 @@ module.exports = {
   openDispute,
   getDisputeForUser,
   createReview,
+
+  // Admin P2P
+  adminGetOverview,
+  adminListAdvertisements,
+  adminListOrders,
+  adminListDisputes,
+  adminListProfiles,
+  adminSetAdvertisementStatus,
+  adminSetP2PFreeze,
+  adminResolveDispute,
 };
