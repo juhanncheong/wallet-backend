@@ -1,15 +1,15 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const transactionSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: "User",
     required: true,
   },
 
   type: {
     type: String,
-    enum: ['deposit', 'withdrawal', 'airdrop'],
+    enum: ["deposit", "withdrawal", "airdrop"],
     required: true,
   },
 
@@ -25,18 +25,21 @@ const transactionSchema = new mongoose.Schema({
     required: true,
   },
 
-  // ✅ NEW: withdrawal method
+  // Withdrawal method:
+  // - CRYPTO: normal on-chain withdrawal
+  // - USDT_WIRE: existing USA wire withdrawal
+  // - USDT_UAE_BANK: UAE local bank withdrawal in AED
   method: {
     type: String,
-    enum: ['CRYPTO', 'USDT_WIRE'],
-    default: 'CRYPTO',
+    enum: ["CRYPTO", "USDT_WIRE", "USDT_UAE_BANK"],
+    default: "CRYPTO",
   },
 
-  // ✅ Existing crypto fields
+  // Existing crypto fields
   network: { type: String, default: "" },
   address: { type: String, default: "" },
 
-  // ✅ NEW: wire info (only used if method === 'USDT_WIRE')
+  // Existing USA wire info (method === 'USDT_WIRE')
   wireInfo: {
     bankName: { type: String, default: "" },
     accountName: { type: String, default: "" },
@@ -45,16 +48,28 @@ const transactionSchema = new mongoose.Schema({
     bankAddress: { type: String, default: "" },
   },
 
+  // UAE local bank info (method === 'USDT_UAE_BANK')
+  uaeBankInfo: {
+    name: { type: String, default: "" },
+    bankName: { type: String, default: "" },
+    iban: { type: String, default: "" },
+    country: { type: String, default: "AE" },
+    amountAED: { type: Number, default: null },
+    exchangeRate: { type: Number, default: null },
+    rateSource: { type: String, default: "" },
+    quotedAt: { type: Date, default: null },
+  },
+
   rewardGrantId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'RewardGrant',
+    ref: "RewardGrant",
     default: null,
   },
 
   status: {
     type: String,
-    enum: ['pending', 'completed', 'failed'],
-    default: 'pending',
+    enum: ["pending", "completed", "failed"],
+    default: "pending",
   },
 
   approvedAt: { type: Date },

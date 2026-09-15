@@ -89,7 +89,7 @@ async function recordSyntheticTick(instId, price, wickPct = 0.001) {
       $set: { c: c.c },
       $inc: { v: addV },
     },
-    { upsert: true }
+    { upsert: true },
   ).catch(() => {});
 }
 
@@ -125,7 +125,7 @@ function aggregateCandlesFrom1m(oneMinCandles, barSec) {
         high: c.high,
         low: c.low,
         close: c.close,
-        volume: (c.volume ?? 0),
+        volume: c.volume ?? 0,
       };
     } else {
       cur.high = Math.max(cur.high, c.high);
@@ -144,12 +144,12 @@ async function loadSynthetic1m(instId, startSec, endSec) {
 
   const docs = await SyntheticCandle.find(
     { instId, tf: "1m", t: { $gte: startSec, $lte: endSec } },
-    { _id: 0, t: 1, o: 1, h: 1, l: 1, c: 1, v: 1 }
+    { _id: 0, t: 1, o: 1, h: 1, l: 1, c: 1, v: 1 },
   )
     .sort({ t: 1 })
     .lean();
 
-  return docs.map(d => ({
+  return docs.map((d) => ({
     time: d.t,
     open: d.o,
     high: d.h,
@@ -161,7 +161,7 @@ async function loadSynthetic1m(instId, startSec, endSec) {
 
 function overlayCandles(baseCandles, syntheticCandles) {
   // replace base candles by timestamp if synthetic has that bucket
-  const m = new Map(baseCandles.map(c => [c.time, c]));
+  const m = new Map(baseCandles.map((c) => [c.time, c]));
   for (const sc of syntheticCandles) m.set(sc.time, sc);
   return Array.from(m.values()).sort((a, b) => a.time - b.time);
 }
@@ -169,8 +169,8 @@ function overlayCandles(baseCandles, syntheticCandles) {
 // Returns a dynamic price within [base - band/2, base + band/2]
 function getDynamicOverridePrice(instId, base, ov) {
   if (!Number.isFinite(base) || base <= 0) {
-  return Math.max(0.01, Number(ov?.fixedPrice) || 1);
-}
+    return Math.max(0.01, Number(ov?.fixedPrice) || 1);
+  }
   const band = Number(ov?.band ?? 0.5);
   const half = Math.max(0.01, band / 2);
 
@@ -189,18 +189,26 @@ function getDynamicOverridePrice(instId, base, ov) {
 
   if (Math.random() < flipProb) st.dir *= -1;
 
-  const step = stepMin + Math.random() * Math.max(0.001, (stepMax - stepMin));
+  const step = stepMin + Math.random() * Math.max(0.001, stepMax - stepMin);
   let next = st.price + st.dir * step;
   if (!Number.isFinite(next) || next <= 0) next = base;
 
   next = next + (base - next) * meanRevert;
 
   if (Math.random() < shockProb) {
-    next += (Math.random() < 0.5 ? -1 : 1) * (shockSize * (0.6 + Math.random() * 0.8));
+    next +=
+      (Math.random() < 0.5 ? -1 : 1) *
+      (shockSize * (0.6 + Math.random() * 0.8));
   }
 
-  if (next >= max) { next = max; st.dir = -1; }
-  if (next <= min) { next = min; st.dir = 1; }
+  if (next >= max) {
+    next = max;
+    st.dir = -1;
+  }
+  if (next <= min) {
+    next = min;
+    st.dir = 1;
+  }
 
   next = Math.round(next * 100) / 100;
   st.price = clamp(next, Math.max(0.01, min), Math.max(0.02, max));
@@ -213,7 +221,7 @@ function mapToOkxInstId(requestedInstId) {
   return pairMapping[requestedInstId] || requestedInstId;
 }
 
-// ✅ Tickers list cache 
+// ✅ Tickers list cache
 let cache = { ts: 0, rows: null };
 const CACHE_MS = 2000;
 
@@ -223,7 +231,7 @@ router.get("/tickers", async (req, res) => {
     const quote = String(req.query.quote || "USDT").toUpperCase();
     const limit = Math.max(
       1,
-      Math.min(parseInt(req.query.limit || "50", 10) || 50, 200)
+      Math.min(parseInt(req.query.limit || "50", 10) || 50, 200),
     );
 
     const now = Date.now();
@@ -245,7 +253,7 @@ router.get("/tickers", async (req, res) => {
 
     const rows = arr
       .filter(
-        (t) => typeof t?.instId === "string" && t.instId.endsWith(`-${quote}`)
+        (t) => typeof t?.instId === "string" && t.instId.endsWith(`-${quote}`),
       )
       .map((t) => {
         const [base, q] = t.instId.split("-");
@@ -327,7 +335,8 @@ function sseSend(res, event, dataObj) {
 }
 
 function remapBooksToPrice(books, targetMid) {
-  if (!books || !Array.isArray(books.bids) || !Array.isArray(books.asks)) return books;
+  if (!books || !Array.isArray(books.bids) || !Array.isArray(books.asks))
+    return books;
 
   const bestBid = Number(books.bids?.[0]?.[0]);
   const bestAsk = Number(books.asks?.[0]?.[0]);
@@ -350,7 +359,7 @@ function remapBooksToPrice(books, targetMid) {
 
 async function fetchTicker(instId) {
   const url = `${OKX_BASE}/api/v5/market/ticker?instId=${encodeURIComponent(
-    instId
+    instId,
   )}`;
   const r = await fetchFn(url, { headers: { accept: "application/json" } });
   if (!r.ok) throw new Error(`OKX ticker failed ${r.status}`);
@@ -383,7 +392,7 @@ async function fetchTicker(instId) {
 
 async function fetchBooks(instId, sz) {
   const url = `${OKX_BASE}/api/v5/market/books?instId=${encodeURIComponent(
-    instId
+    instId,
   )}&sz=${sz}`;
   const r = await fetchFn(url, { headers: { accept: "application/json" } });
   if (!r.ok) throw new Error(`OKX books failed ${r.status}`);
@@ -448,130 +457,132 @@ function startLoop(instId) {
     const doTicker = now - lastTickerAt >= TICKER_MS;
 
     // -------------------------
-// TICKER
-// -------------------------
-try {
-  if (doTicker) {
+    // TICKER
+    // -------------------------
+    try {
+      if (doTicker) {
+        const okxInstId = mapToOkxInstId(instId);
+        const tOkx = await fetchTicker(okxInstId);
+        tOkx.instId = instId;
 
-    const okxInstId = mapToOkxInstId(instId);
-    const tOkx = await fetchTicker(okxInstId);
-    tOkx.instId = instId;
+        const ov = await getActiveOverride(instId);
 
-    const ov = await getActiveOverride(instId);
+        // =============================
+        // 1️⃣ ACTIVE OVERRIDE
+        // =============================
+        if (ov) {
+          const target = safeNum(ov.fixedPrice);
+          if (!target || target <= 0) {
+            lastTickerAt = now;
+            for (const res of e.clients) sseSend(res, "ticker", tOkx);
+          } else {
+            // Resolve start price
+            let start = safeNum(ov.startPrice);
+            if (!start || start <= 0) {
+              const okxLast = safeNum(tOkx.last);
+              start = okxLast && okxLast > 0 ? okxLast : target;
 
-    // =============================
-    // 1️⃣ ACTIVE OVERRIDE
-    // =============================
-    if (ov) {
-      const target = safeNum(ov.fixedPrice);
-      if (!target || target <= 0) {
-        lastTickerAt = now;
-        for (const res of e.clients) sseSend(res, "ticker", tOkx);
-      } else {
+              await MarketOverride.updateOne(
+                { instId, isActive: true },
+                { $set: { startPrice: start } },
+              ).catch(() => {});
+            }
 
-        // Resolve start price
-        let start = safeNum(ov.startPrice);
-        if (!start || start <= 0) {
-          const okxLast = safeNum(tOkx.last);
-          start = okxLast && okxLast > 0 ? okxLast : target;
+            const live = overrideLive.get(instId);
+            const ovStartKey = String(ov.startAt || "");
+            if (!live?.ovStartAt || live.ovStartAt !== ovStartKey) {
+              overrideLive.set(instId, {
+                price: start,
+                dir: 1,
+                ovStartAt: ovStartKey,
+              });
+            }
 
-          await MarketOverride.updateOne(
-            { instId, isActive: true },
-            { $set: { startPrice: start } }
-          ).catch(() => {});
-        }
+            const t0 = new Date(ov.startAt).getTime();
+            const t1 = new Date(ov.endAt).getTime();
+            const k = clamp((now - t0) / Math.max(1, t1 - t0), 0, 1);
 
-        const live = overrideLive.get(instId);
-        const ovStartKey = String(ov.startAt || "");
-        if (!live?.ovStartAt || live.ovStartAt !== ovStartKey) {
-          overrideLive.set(instId, { price: start, dir: 1, ovStartAt: ovStartKey });
-        }
+            // When override just finished, capture blend start price ONCE
+            if (now >= new Date(ov.endAt).getTime() && ov.isActive) {
+              const live = overrideLive.get(instId);
+              const finalPrice = live?.price;
 
-        const t0 = new Date(ov.startAt).getTime();
-        const t1 = new Date(ov.endAt).getTime();
-        const k = clamp((now - t0) / Math.max(1, t1 - t0), 0, 1);
-
-        // When override just finished, capture blend start price ONCE
-        if (now >= new Date(ov.endAt).getTime() && ov.isActive) {
-          const live = overrideLive.get(instId);
-          const finalPrice = live?.price;
-
-        if (finalPrice && finalPrice > 0) {
-          await MarketOverride.updateOne(
-            { instId, isActive: true },
-            {
-              $set: {
-                isActive: false,
-                blendStartPrice: finalPrice
+              if (finalPrice && finalPrice > 0) {
+                await MarketOverride.updateOne(
+                  { instId, isActive: true },
+                  {
+                    $set: {
+                      isActive: false,
+                      blendStartPrice: finalPrice,
+                    },
+                  },
+                );
               }
             }
-          );
-        }
-      }
 
-        const eased = k < 0.5
-          ? 2 * k * k
-          : 1 - Math.pow(-2 * k + 2, 2) / 2;
+            const eased = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
 
-        const base = round2(start + (target - start) * eased);
-        const p = getDynamicOverridePrice(instId, base, ov);
+            const base = round2(start + (target - start) * eased);
+            const p = getDynamicOverridePrice(instId, base, ov);
 
-        await recordSyntheticTick(instId, p, ov.wickPct);
+            await recordSyntheticTick(instId, p, ov.wickPct);
 
-        overrideLive.set(instId, { price: p, dir: 1, ovStartAt: ovStartKey });
+            overrideLive.set(instId, {
+              price: p,
+              dir: 1,
+              ovStartAt: ovStartKey,
+            });
 
-        tOkx.last = String(p);
+            tOkx.last = String(p);
 
-        lastTickerAt = now;
-        for (const res of e.clients) sseSend(res, "ticker", tOkx);
-      }
-
-    // =============================
-    // BLEND BACK AFTER OVERRIDE
-    // =============================
-    } else {
-
-      const blend = await getBlendState(instId);
-
-      if (blend) {
-        const live = overrideLive.get(instId);
-        const okxLast = safeNum(tOkx.last);
-        const from = safeNum(blend.doc.blendStartPrice);
-
-        if (from && from > 0 && okxLast && okxLast > 0) {
-
-          const k = clamp(
-            (blend.nowMs - blend.endMs) / blend.blendMs,
-            0,
-            1
-          );
-
-          // Smooth slow return curve
-          const eased = 1 - Math.pow(1 - k, 3);
-
-          const p = round2(from + (okxLast - from) * eased);
-
-          await recordSyntheticTick(instId, p, blend.doc.wickPct);
-
-          tOkx.last = String(p);
-
-          overrideLive.set(instId, { price: p, dir: 1 });
-
-          if (k >= 1) {
-            overrideLive.delete(instId);
+            lastTickerAt = now;
+            for (const res of e.clients) sseSend(res, "ticker", tOkx);
           }
+
+          // =============================
+          // BLEND BACK AFTER OVERRIDE
+          // =============================
+        } else {
+          const blend = await getBlendState(instId);
+
+          if (blend) {
+            const live = overrideLive.get(instId);
+            const okxLast = safeNum(tOkx.last);
+            const from = safeNum(blend.doc.blendStartPrice);
+
+            if (from && from > 0 && okxLast && okxLast > 0) {
+              const k = clamp(
+                (blend.nowMs - blend.endMs) / blend.blendMs,
+                0,
+                1,
+              );
+
+              // Smooth slow return curve
+              const eased = 1 - Math.pow(1 - k, 3);
+
+              const p = round2(from + (okxLast - from) * eased);
+
+              await recordSyntheticTick(instId, p, blend.doc.wickPct);
+
+              tOkx.last = String(p);
+
+              overrideLive.set(instId, { price: p, dir: 1 });
+
+              if (k >= 1) {
+                overrideLive.delete(instId);
+              }
+            }
+          }
+
+          lastTickerAt = now;
+          for (const res of e.clients) sseSend(res, "ticker", tOkx);
         }
       }
-
-        lastTickerAt = now;
-        for (const res of e.clients) sseSend(res, "ticker", tOkx);
+    } catch (err) {
+      for (const res of e.clients) {
+        sseSend(res, "error", { message: "ticker_fetch_failed" });
       }
-     }
-   } catch (err) {
-     for (const res of e.clients) {
-       sseSend(res, "error", { message: "ticker_fetch_failed" });
-     }
-   }
+    }
 
     // -------------------------
     // BOOKS
@@ -598,12 +609,19 @@ try {
               const bestBid = Number(b?.bids?.[0]?.[0]);
               const bestAsk = Number(b?.asks?.[0]?.[0]);
               const okxMid =
-                Number.isFinite(bestBid) && Number.isFinite(bestAsk) && bestBid > 0 && bestAsk > 0
+                Number.isFinite(bestBid) &&
+                Number.isFinite(bestAsk) &&
+                bestBid > 0 &&
+                bestAsk > 0
                   ? (bestBid + bestAsk) / 2
                   : null;
 
               if (Number.isFinite(okxMid) && okxMid > 0) {
-                const k = clamp((blend.nowMs - blend.endMs) / blend.blendMs, 0, 1);
+                const k = clamp(
+                  (blend.nowMs - blend.endMs) / blend.blendMs,
+                  0,
+                  1,
+                );
                 const eased = 1 - Math.pow(1 - k, 2);
                 const mid = round2(from + (okxMid - from) * eased);
 
@@ -619,7 +637,8 @@ try {
         for (const res of e.clients) sseSend(res, "books", b);
       }
     } catch {
-      for (const res of e.clients) sseSend(res, "error", { message: "books_fetch_failed" });
+      for (const res of e.clients)
+        sseSend(res, "error", { message: "books_fetch_failed" });
     }
   };
 
@@ -644,14 +663,17 @@ function stopLoop(instId) {
 router.get("/stream/spot", (req, res) => {
   const requestedInstId = String(req.query.instId || "").toUpperCase();
   const okxInstId = mapToOkxInstId(requestedInstId);
-  const sz = Math.max(1, Math.min(parseInt(req.query.sz || "20", 10) || 20, 50));
+  const sz = Math.max(
+    1,
+    Math.min(parseInt(req.query.sz || "20", 10) || 20, 50),
+  );
 
   if (!requestedInstId || !requestedInstId.includes("-")) {
     return res.status(400).json({ error: "Bad instId" });
   }
 
   sseInit(res);
-    sseSend(res, "hello", { requestedInstId: requestedInstId, sz });
+  sseSend(res, "hello", { requestedInstId: requestedInstId, sz });
 
   // Attach client
   let entry = spotStreams.get(requestedInstId);
@@ -720,14 +742,17 @@ async function fetchCandles(instId, bar, limit, after, before) {
     // OKX often returns newest -> oldest, chart wants oldest -> newest
     .sort((a, b) => a.time - b.time);
 
-    if (instId === "NEX-USDT" && out.length) {
-     }
-     return { instId, bar, candles: out };
-   }
+  if (instId === "NEX-USDT" && out.length) {
+  }
+  return { instId, bar, candles: out };
+}
 
 async function getActiveOverride(instId) {
   if (instId !== "NEX-USDT") return null;
-  const doc = await MarketOverride.findOne({ instId: "NEX-USDT", isActive: true }).lean();
+  const doc = await MarketOverride.findOne({
+    instId: "NEX-USDT",
+    isActive: true,
+  }).lean();
   if (!doc) return null;
   if (doc.endAt && new Date(doc.endAt).getTime() <= Date.now()) return null;
   return doc;
@@ -789,7 +814,7 @@ router.get("/candles", async (req, res) => {
 
     const limit = Math.max(
       10,
-      Math.min(parseInt(req.query.limit || "300", 10) || 300, 1000)
+      Math.min(parseInt(req.query.limit || "300", 10) || 300, 1000),
     );
 
     const after = req.query.after ? Number(req.query.after) : null;
@@ -807,16 +832,16 @@ router.get("/candles", async (req, res) => {
     const data = await fetchCandles(okxInstId, bar, limit, after, before);
     data.instId = requestedInstId;
 
-     const barSec = barToSec(bar);
+    const barSec = barToSec(bar);
 
     // Overlay synthetic candles (persisted 1m) onto cloned OKX candles for NEX
     if (requestedInstId === "NEX-USDT" && data?.candles?.length) {
       // Always load synthetic from recent history window
-       const nowSec = Math.floor(Date.now() / 1000);
+      const nowSec = Math.floor(Date.now() / 1000);
 
       // Load last 2000 minutes (safe buffer)
-       const startSec = nowSec - (60 * 2000);
-       const endSec = nowSec;
+      const startSec = nowSec - 60 * 2000;
+      const endSec = nowSec;
 
       const syn1m = await loadSynthetic1m("NEX-USDT", startSec, endSec);
 
@@ -825,27 +850,33 @@ router.get("/candles", async (req, res) => {
           barSec === 60 ? syn1m : aggregateCandlesFrom1m(syn1m, barSec);
 
         // synthetic buckets replace base buckets
-        const map = new Map(data.candles.map(c => [c.time, c]));
+        const map = new Map(data.candles.map((c) => [c.time, c]));
 
         for (const s of synAgg) {
           map.set(s.time, s); // replace OR insert
         }
 
-        data.candles = Array.from(map.values()).sort((a,b) => a.time - b.time);
+        data.candles = Array.from(map.values()).sort((a, b) => a.time - b.time);
 
         // ✅ safety: never allow zero/negative candles (prevents giant wick)
         data.candles = data.candles
           .map((c) => {
-          const o = Number(c.open), h = Number(c.high), l = Number(c.low), cl = Number(c.close);
-           if (![o,h,l,cl].every(Number.isFinite)) return null;
-           if (o <= 0 || h <= 0 || l <= 0 || cl <= 0) return null;
-             return c;
-           })
-         .filter(Boolean);
-        }
+            const o = Number(c.open),
+              h = Number(c.high),
+              l = Number(c.low),
+              cl = Number(c.close);
+            if (![o, h, l, cl].every(Number.isFinite)) return null;
+            if (o <= 0 || h <= 0 || l <= 0 || cl <= 0) return null;
+            return c;
+          })
+          .filter(Boolean);
       }
-   
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    }
+
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate",
+    );
     res.setHeader("Pragma", "no-cache");
     res.setHeader("Expires", "0");
 
