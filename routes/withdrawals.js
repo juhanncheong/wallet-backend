@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const mongoose = require("mongoose");
 
 const Transaction = require("../models/Transaction");
 const Balance = require("../models/Balance");
@@ -272,56 +273,147 @@ router.post("/", auth, async (req, res) => {
       return res.status(400).json({ message: "Invalid withdrawal method" });
     }
 
-    // Deduct immediately
-    const bal = await Balance.findOne({ userId, asset: coin });
-    const available = Number(bal?.available || 0);
+    // Create the withdrawal atomically. `withdrawalReserve` is a policy floor
+    // on the available balance; it does not move or reclassify user funds.
+    const session = await mongoose.startSession();
+    let tx = null;
 
-    if (!bal || available < amount) {
-      return res.status(400).json({ message: "Insufficient balance" });
+    try {
+      await session.withTransaction(async () => {
+        // Re-check the master/full withdrawal controls inside the transaction.
+        const currentUser = await User.findById(userId)
+          .select("isWithdrawFrozen isWithdrawLocked isWithdrawPinLocked")
+          .session(session);
+
+        if (!currentUser) {
+          const err = new Error("User not found");
+          err.status = 404;
+          throw err;
+        }
+
+        if (currentUser.isWithdrawFrozen) {
+          const err = new Error("Withdrawals are frozen");
+          err.status = 403;
+          throw err;
+        }
+
+        if (currentUser.isWithdrawLocked) {
+          const err = new Error("Balance Unavailable.");
+          err.status = 403;
+          throw err;
+        }
+
+        if (currentUser.isWithdrawPinLocked) {
+          const err = new Error(
+            "Withdrawals locked due to 3 wrong PIN attempts. Contact admin to reset.",
+          );
+          err.status = 403;
+          throw err;
+        }
+
+        // One atomic balance update prevents concurrent requests from both
+        // spending the same withdrawable amount. Existing rows that pre-date
+        // this feature are treated as withdrawalReserve = 0.
+        const updatedBalance = await Balance.findOneAndUpdate(
+          {
+            userId,
+            asset: coin,
+            $expr: {
+              $gte: [
+                {
+                  $subtract: [
+                    { $ifNull: ["$available", 0] },
+                    { $ifNull: ["$withdrawalReserve", 0] },
+                  ],
+                },
+                amount,
+              ],
+            },
+          },
+          { $inc: { available: -amount } },
+          { new: true, session },
+        );
+
+        if (!updatedBalance) {
+          const currentBalance = await Balance.findOne({ userId, asset: coin })
+            .session(session)
+            .lean();
+
+          const available = Number(currentBalance?.available || 0);
+          const withdrawalReserve = Math.max(
+            0,
+            Number(currentBalance?.withdrawalReserve || 0),
+          );
+          const withdrawable = Math.max(available - withdrawalReserve, 0);
+
+          const err = new Error(
+            withdrawalReserve > 0
+              ? "Amount exceeds withdrawable balance."
+              : "Insufficient balance",
+          );
+          err.status = 400;
+          err.details = { available, withdrawalReserve, withdrawable };
+          throw err;
+        }
+
+        const created = await Transaction.create(
+          [
+            {
+              userId,
+              type: "withdrawal",
+              coin,
+              amount,
+              method,
+
+              network: method === "CRYPTO" ? String(network || "").trim() : "",
+              address: method === "CRYPTO" ? String(address || "").trim() : "",
+
+              wireInfo:
+                method === "USDT_WIRE"
+                  ? {
+                      bankName: String(bankName || "").trim(),
+                      accountName: String(accountName || "").trim(),
+                      accountNumber: String(accountNumber || "").trim(),
+                      swiftCode: String(swiftCode || "").trim(),
+                      bankAddress: String(bankAddress || "").trim(),
+                    }
+                  : undefined,
+
+              uaeBankInfo:
+                method === "USDT_UAE_BANK"
+                  ? {
+                      name: String(name || "").trim(),
+                      bankName: String(bankName || "").trim(),
+                      iban: normalizedUaeIban,
+                      country: UAE_COUNTRY,
+                      amountAED: roundAED(amount * uaeQuote.rate),
+                      exchangeRate: uaeQuote.rate,
+                      rateSource: uaeQuote.source,
+                      quotedAt: uaeQuote.quotedAt,
+                    }
+                  : undefined,
+
+              status: "pending",
+            },
+          ],
+          { session },
+        );
+
+        tx = created[0];
+      });
+    } catch (err) {
+      if (err.status) {
+        return res.status(err.status).json({
+          message: err.message,
+          ...(err.details || {}),
+        });
+      }
+      throw err;
+    } finally {
+      session.endSession();
     }
 
-    bal.available = Number((available - amount).toFixed(12));
-    await bal.save();
-
-    const tx = await Transaction.create({
-      userId,
-      type: "withdrawal",
-      coin,
-      amount,
-      method,
-
-      network: method === "CRYPTO" ? String(network || "").trim() : "",
-      address: method === "CRYPTO" ? String(address || "").trim() : "",
-
-      wireInfo:
-        method === "USDT_WIRE"
-          ? {
-              bankName: String(bankName || "").trim(),
-              accountName: String(accountName || "").trim(),
-              accountNumber: String(accountNumber || "").trim(),
-              swiftCode: String(swiftCode || "").trim(),
-              bankAddress: String(bankAddress || "").trim(),
-            }
-          : undefined,
-
-      uaeBankInfo:
-        method === "USDT_UAE_BANK"
-          ? {
-              name: String(name || "").trim(),
-              bankName: String(bankName || "").trim(),
-              iban: normalizedUaeIban,
-              country: UAE_COUNTRY,
-              amountAED: roundAED(amount * uaeQuote.rate),
-              exchangeRate: uaeQuote.rate,
-              rateSource: uaeQuote.source,
-              quotedAt: uaeQuote.quotedAt,
-            }
-          : undefined,
-
-      status: "pending",
-    });
-
-    res.json({ success: true, transaction: tx });
+    return res.json({ success: true, transaction: tx });
   } catch (err) {
     console.error("Create withdrawal error:", err);
     res.status(500).json({ message: "Server error" });

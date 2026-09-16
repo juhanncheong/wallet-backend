@@ -277,7 +277,11 @@ router.get("/stats", async (req, res) => {
     // WALLET DISTRIBUTION - Balance is the single source of truth.
     const walletDistribution = { BTC: 0, ETH: 0, USDC: 0, USDT: 0 };
     const balanceRows = await Balance.find({
-      $or: [{ available: { $gt: EPSILON } }, { locked: { $gt: EPSILON } }],
+      $or: [
+        { available: { $gt: EPSILON } },
+        { locked: { $gt: EPSILON } },
+        { withdrawalReserve: { $gt: EPSILON } },
+      ],
     }).lean();
 
     for (const row of balanceRows) {
@@ -359,6 +363,84 @@ router.patch("/users/:id/toggle-withdrawal-lock", async (req, res) => {
   } catch (err) {
     console.error("Toggle withdrawal lock error:", err);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Set the per-asset withdrawal reserve without moving any funds.
+// The existing isWithdrawLocked flag remains the master/full withdrawal lock.
+router.patch("/users/:id/withdrawal-reserve", verifyAdmin, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const asset = normalizeAsset(req.body.asset || req.body.coin);
+    const amount = Number(req.body.amount);
+
+    if (!mongoose.Types.ObjectId.isValid(userId) || !asset) {
+      return res.status(400).json({ message: "Invalid userId/asset" });
+    }
+
+    if (!Number.isFinite(amount) || amount < 0) {
+      return res
+        .status(400)
+        .json({ message: "Withdrawal reserve must be zero or greater" });
+    }
+
+    const user = await User.findById(userId).select(
+      "isWithdrawLocked isWithdrawFrozen isWithdrawPinLocked",
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    let balance = await Balance.findOne({ userId, asset });
+
+    // Clearing a reserve for an asset that has no balance is a harmless no-op.
+    if (!balance && amount <= EPSILON) {
+      return res.json({
+        success: true,
+        asset,
+        available: 0,
+        locked: 0,
+        withdrawalReserve: 0,
+        withdrawable: 0,
+        isWithdrawLocked: user.isWithdrawLocked,
+        isWithdrawFrozen: user.isWithdrawFrozen,
+        isWithdrawPinLocked: user.isWithdrawPinLocked,
+      });
+    }
+
+    if (!balance) {
+      balance = new Balance({ userId, asset });
+    }
+
+    balance.withdrawalReserve = amount;
+    await balance.save();
+
+    const available = Number(balance.available || 0);
+    const withdrawalReserve = Math.max(
+      0,
+      Number(balance.withdrawalReserve || 0),
+    );
+    const withdrawalsBlocked = Boolean(
+      user.isWithdrawLocked ||
+      user.isWithdrawFrozen ||
+      user.isWithdrawPinLocked,
+    );
+    const withdrawable = withdrawalsBlocked
+      ? 0
+      : Math.max(available - withdrawalReserve, 0);
+
+    return res.json({
+      success: true,
+      asset,
+      available,
+      locked: Number(balance.locked || 0),
+      withdrawalReserve,
+      withdrawable,
+      isWithdrawLocked: user.isWithdrawLocked,
+      isWithdrawFrozen: user.isWithdrawFrozen,
+      isWithdrawPinLocked: user.isWithdrawPinLocked,
+    });
+  } catch (err) {
+    console.error("Set withdrawal reserve error:", err);
+    return res.status(500).json({ message: "Internal server error" });
   }
 });
 
@@ -577,7 +659,11 @@ router.get("/", auth, async (req, res) => {
 
     const rows = await Balance.find({
       userId: user._id,
-      $or: [{ available: { $gt: EPSILON } }, { locked: { $gt: EPSILON } }],
+      $or: [
+        { available: { $gt: EPSILON } },
+        { locked: { $gt: EPSILON } },
+        { withdrawalReserve: { $gt: EPSILON } },
+      ],
     })
       .sort({ asset: 1 })
       .lean();
@@ -588,11 +674,32 @@ router.get("/", auth, async (req, res) => {
       if (!asset) continue;
 
       if (!balances[asset]) {
-        balances[asset] = { available: 0, locked: 0 };
+        balances[asset] = {
+          available: 0,
+          locked: 0,
+          withdrawalReserve: 0,
+          withdrawable: 0,
+        };
       }
 
       balances[asset].available += Number(row.available || 0);
       balances[asset].locked += Number(row.locked || 0);
+      balances[asset].withdrawalReserve += Math.max(
+        0,
+        Number(row.withdrawalReserve || 0),
+      );
+    }
+
+    const withdrawalsBlocked = Boolean(
+      user.isWithdrawLocked ||
+      user.isWithdrawFrozen ||
+      user.isWithdrawPinLocked,
+    );
+
+    for (const balance of Object.values(balances)) {
+      balance.withdrawable = withdrawalsBlocked
+        ? 0
+        : Math.max(balance.available - balance.withdrawalReserve, 0);
     }
 
     return res.json({
@@ -675,9 +782,18 @@ router.patch(
 // ✅ Admin: Get user balances (NEW SYSTEM)
 router.get("/users/:id/balances", verifyAdmin, async (req, res) => {
   try {
+    const user = await User.findById(req.params.id).select(
+      "isWithdrawLocked isWithdrawFrozen isWithdrawPinLocked",
+    );
+    if (!user) return res.status(404).json({ message: "User not found" });
+
     const rows = await Balance.find({
       userId: req.params.id,
-      $or: [{ available: { $gt: EPSILON } }, { locked: { $gt: EPSILON } }],
+      $or: [
+        { available: { $gt: EPSILON } },
+        { locked: { $gt: EPSILON } },
+        { withdrawalReserve: { $gt: EPSILON } },
+      ],
     })
       .sort({ asset: 1 })
       .lean();
@@ -694,19 +810,42 @@ router.get("/users/:id/balances", verifyAdmin, async (req, res) => {
           asset,
           available: 0,
           locked: 0,
+          withdrawalReserve: 0,
+          withdrawable: 0,
         };
       }
 
       merged[asset].available += Number(row.available || 0);
       merged[asset].locked += Number(row.locked || 0);
+      merged[asset].withdrawalReserve += Math.max(
+        0,
+        Number(row.withdrawalReserve || 0),
+      );
     }
 
-    const balances = Object.values(merged).filter((row) => {
-      return (
-        Number(row.available || 0) > EPSILON ||
-        Number(row.locked || 0) > EPSILON
-      );
-    });
+    const withdrawalsBlocked = Boolean(
+      user.isWithdrawLocked ||
+      user.isWithdrawFrozen ||
+      user.isWithdrawPinLocked,
+    );
+
+    const balances = Object.values(merged)
+      .map((row) => ({
+        ...row,
+        withdrawable: withdrawalsBlocked
+          ? 0
+          : Math.max(
+              Number(row.available || 0) - Number(row.withdrawalReserve || 0),
+              0,
+            ),
+      }))
+      .filter((row) => {
+        return (
+          Number(row.available || 0) > EPSILON ||
+          Number(row.locked || 0) > EPSILON ||
+          Number(row.withdrawalReserve || 0) > EPSILON
+        );
+      });
 
     return res.json(balances);
   } catch (err) {

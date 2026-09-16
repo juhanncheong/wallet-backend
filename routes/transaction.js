@@ -1,11 +1,12 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const Transaction = require('../models/Transaction');
-const User = require('../models/User');
+const mongoose = require("mongoose");
+const Transaction = require("../models/Transaction");
+const User = require("../models/User");
 const Balance = require("../models/Balance");
 
 // POST - Create a new transaction (deposit or withdrawal)
-router.post('/', async (req, res) => {
+router.post("/", async (req, res) => {
   try {
     const { userId, type, coin, amount, status } = req.body;
 
@@ -14,7 +15,7 @@ router.post('/', async (req, res) => {
       type,
       coin,
       amount,
-      status: status || (type === 'withdrawal' ? 'pending' : 'completed'),
+      status: status || (type === "withdrawal" ? "pending" : "completed"),
     });
 
     await newTx.save();
@@ -26,7 +27,9 @@ router.post('/', async (req, res) => {
 });
 
 // PUT - Update withdrawal status (admin approval/rejection)
-router.put('/:id/status', async (req, res) => {
+router.put("/:id/status", async (req, res) => {
+  const session = await mongoose.startSession();
+
   try {
     const { status } = req.body; // 'completed' or 'failed'
 
@@ -34,51 +37,81 @@ router.put('/:id/status', async (req, res) => {
       return res.status(400).json({ message: "Invalid status" });
     }
 
-    const tx = await Transaction.findById(req.params.id);
-    if (!tx) return res.status(404).json({ message: 'Transaction not found' });
+    let updatedTx = null;
 
-    if (tx.type !== 'withdrawal') {
-      return res.status(400).json({ message: 'Only withdrawals can be updated' });
-    }
-
-    if (tx.status !== "pending") {
-      return res.status(400).json({ message: "Already processed" });
-    }
-
-    tx.status = status;
-    await tx.save();
-
-    // Refund only if rejected
-    if (status === "failed") {
-      const asset = String(tx.coin || "").trim().toUpperCase();
-
-      await Balance.updateOne(
-        { userId: tx.userId, asset },
-        { $inc: { available: tx.amount } }
+    await session.withTransaction(async () => {
+      updatedTx = await Transaction.findOneAndUpdate(
+        {
+          _id: req.params.id,
+          type: "withdrawal",
+          status: "pending",
+        },
+        { $set: { status } },
+        { new: true, session },
       );
-    }
 
-    res.json({ message: `Transaction ${status}` });
+      if (!updatedTx) {
+        const existing = await Transaction.findById(req.params.id)
+          .session(session)
+          .lean();
 
+        const err = new Error(
+          !existing
+            ? "Transaction not found"
+            : existing.type !== "withdrawal"
+              ? "Only withdrawals can be updated"
+              : "Already processed",
+        );
+        err.status = !existing ? 404 : 400;
+        throw err;
+      }
+
+      // Refund only if rejected/failed. The refund and status transition are
+      // committed together, so a failed request cannot mark a withdrawal as
+      // failed without restoring its funds.
+      if (status === "failed") {
+        const asset = String(updatedTx.coin || "")
+          .trim()
+          .toUpperCase();
+
+        await Balance.updateOne(
+          { userId: updatedTx.userId, asset },
+          {
+            $inc: { available: Number(updatedTx.amount || 0) },
+            $setOnInsert: { userId: updatedTx.userId, asset },
+          },
+          { upsert: true, session },
+        );
+      }
+    });
+
+    return res.json({ message: `Transaction ${status}` });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    if (err.status) {
+      return res.status(err.status).json({ message: err.message });
+    }
+    return res.status(500).json({ error: err.message });
+  } finally {
+    session.endSession();
   }
 });
 
-router.get('/all-withdrawals', async (req, res) => {
+router.get("/all-withdrawals", async (req, res) => {
   try {
-    const withdrawals = await Transaction.find({ type: 'withdrawal' }).sort({ createdAt: -1 });
+    const withdrawals = await Transaction.find({ type: "withdrawal" }).sort({
+      createdAt: -1,
+    });
     res.json(withdrawals);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-router.get('/all-deposits', async (req, res) => {
+router.get("/all-deposits", async (req, res) => {
   try {
-    const deposits = await Transaction.find({ type: 'deposit' })
+    const deposits = await Transaction.find({ type: "deposit" })
       .sort({ createdAt: -1 })
-      .populate('userId', 'email'); // optional but nice
+      .populate("userId", "email"); // optional but nice
     res.json(deposits);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -86,9 +119,11 @@ router.get('/all-deposits', async (req, res) => {
 });
 
 // GET - Get all transactions for a user
-router.get('/:userId', async (req, res) => {
+router.get("/:userId", async (req, res) => {
   try {
-    const transactions = await Transaction.find({ userId: req.params.userId }).sort({ createdAt: -1 });
+    const transactions = await Transaction.find({
+      userId: req.params.userId,
+    }).sort({ createdAt: -1 });
     res.json(transactions);
   } catch (err) {
     res.status(500).json({ error: err.message });

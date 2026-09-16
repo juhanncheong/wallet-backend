@@ -47,8 +47,12 @@ router.post("/balance/set", verifyAdmin, async (req, res) => {
 
     if (numericAmount <= EPSILON) {
       const locked = Number(existing?.locked || 0);
+      const withdrawalReserve = Math.max(
+        0,
+        Number(existing?.withdrawalReserve || 0),
+      );
 
-      if (!existing || locked <= EPSILON) {
+      if (!existing || (locked <= EPSILON && withdrawalReserve <= EPSILON)) {
         if (existing) await existing.deleteOne();
 
         return res.json({
@@ -58,6 +62,7 @@ router.post("/balance/set", verifyAdmin, async (req, res) => {
             asset: normalizedAsset,
             available: 0,
             locked: 0,
+            withdrawalReserve: 0,
             deleted: true,
           },
         });
@@ -67,7 +72,8 @@ router.post("/balance/set", verifyAdmin, async (req, res) => {
       await existing.save();
 
       return res.json({
-        message: "Available balance set to zero; locked funds preserved",
+        message:
+          "Available balance set to zero; locked funds/withdrawal reserve preserved",
         data: existing,
       });
     }
